@@ -13,8 +13,8 @@ models/
 *.bin
 
 # Data
-data/inputs/
-data/outputs/
+#data/inputs/
+#data/outputs/
 
 # Python
 __pycache__/
