@@ -1,0 +1,8 @@
+streamlit
+pandas
+numpy
+opencv-python
+python-dotenv
+ultralytics
+openai
+imageio-ffmpeg 
