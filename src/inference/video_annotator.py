@@ -63,7 +63,7 @@ def annotate_video(
                 f"Terrain: {feat.terrain_label}",
                 f"Balance: {feat.balance_score}",
                 f"Line efficiency: {feat.line_efficiency_score}",
-                f"Speed proxy: {feat.speed_proxy}",
+                f"Speed: {feat.speed_proxy:.1f} px/s" if feat.speed_proxy is not None else "Speed: --",
             ]
             y = 30
             for line in text_lines:
@@ -84,7 +84,7 @@ def annotate_video(
 
     ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
     subprocess.run(
-        [ffmpeg_exe, "-y", "-i", tmp_path, "-vcodec", "libx264", "-crf", "23", "-preset", "fast", output_video_path],
+        [ffmpeg_exe, "-y", "-i", tmp_path, "-vcodec", "libx264", "-crf", "23", "-preset", "fast", "-an", output_video_path],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )

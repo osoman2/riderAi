@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 import shutil
@@ -9,6 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -50,6 +52,233 @@ st.markdown("""
 }
 </style>
 """, unsafe_allow_html=True)
+
+# ── Sync video player helper ──────────────────────────────────────────────────
+def _b64(path: str) -> str:
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+
+def sync_video_player(
+    path1: str,
+    path2: str,
+    label1: str = "Input",
+    label2: str = "Annotated",
+    video_max_height: int = 320,
+    df=None,
+    plot_cols=None,
+) -> None:
+    """Two videos side-by-side · shared slider · optional clickable metrics chart."""
+    import json as _json
+
+    b64_1 = _b64(path1)
+    b64_2 = _b64(path2)
+    uid = abs(hash((path1, path2))) % 10**8
+
+    has_chart = (
+        df is not None
+        and plot_cols
+        and len(plot_cols) > 0
+        and "timestamp_sec" in df.columns
+    )
+    chart_h = 215 if has_chart else 0
+    component_height = video_max_height + 95 + chart_h
+
+    # Serialize chart data: only timestamp_sec + requested metric columns
+    chart_json, plot_cols_js, palette_js = "[]", "[]", "[]"
+    if has_chart:
+        cols = ["timestamp_sec"] + [c for c in plot_cols if c in df.columns]
+        safe = df[cols].copy()
+        safe = safe.where(safe.notna(), other=None)
+        chart_json = safe.to_json(orient="records")
+        plot_cols_js = _json.dumps([c for c in plot_cols if c in df.columns])
+        palette_js = _json.dumps(
+            ["#7eb8f7", "#7ef7a2", "#f7a27e", "#f7e27e", "#c87ef7"]
+        )
+
+    chart_html = ""
+    chartjs_tag = ""
+    if has_chart:
+        chart_html = f"""
+  <div style="margin-top:14px;">
+    <p class="lbl">📊 Metric trends &nbsp;·&nbsp; click to seek</p>
+    <canvas id="chart_{uid}" style="max-height:180px; cursor:crosshair;"></canvas>
+  </div>"""
+        chartjs_tag = (
+            '<script src="https://cdn.jsdelivr.net/npm/'
+            'chart.js@4.4.0/dist/chart.umd.min.js"></script>'
+        )
+
+    html = f"""
+<style>
+  #wrap_{uid} {{ font-family: sans-serif; box-sizing: border-box; }}
+  #wrap_{uid} .lbl {{
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 2px;
+    color: #888; margin: 0 0 6px 0;
+  }}
+  #wrap_{uid} video {{
+    width: 100%; display: block; border-radius: 8px; background: #000;
+    max-height: {video_max_height}px; object-fit: contain;
+  }}
+  #wrap_{uid} .controls {{
+    display: flex; align-items: center; gap: 10px; margin-top: 10px;
+  }}
+  #wrap_{uid} #pb_{uid} {{
+    padding: 6px 18px; font-size: 0.9rem; cursor: pointer;
+    border-radius: 6px; border: 1px solid #555;
+    background: #1e3a5f; color: #7eb8f7; white-space: nowrap; flex-shrink: 0;
+  }}
+  #wrap_{uid} #sl_{uid} {{ flex: 1; cursor: pointer; accent-color: #7eb8f7; }}
+  #wrap_{uid} #tl_{uid} {{
+    font-size: 0.78rem; color: #888; min-width: 90px; text-align: right; flex-shrink: 0;
+  }}
+</style>
+<div id="wrap_{uid}">
+  <div style="display:flex; gap:16px;">
+    <div style="flex:1;">
+      <p class="lbl">{label1}</p>
+      <video id="v1_{uid}" preload="auto" muted style="cursor:pointer"
+             onclick="togglePlay_{uid}()">
+        <source src="data:video/mp4;base64,{b64_1}" type="video/mp4">
+      </video>
+    </div>
+    <div style="flex:1;">
+      <p class="lbl">{label2}</p>
+      <video id="v2_{uid}" preload="auto" muted style="cursor:pointer"
+             onclick="togglePlay_{uid}()">
+        <source src="data:video/mp4;base64,{b64_2}" type="video/mp4">
+      </video>
+    </div>
+  </div>
+  <div class="controls">
+    <button id="pb_{uid}" onclick="togglePlay_{uid}()">▶ Play</button>
+    <input type="range" id="sl_{uid}" min="0" max="10000" value="0"
+           oninput="seek_{uid}(this.value)">
+    <span id="tl_{uid}">0.0 s / 0.0 s</span>
+  </div>{chart_html}
+</div>
+{chartjs_tag}
+<script>
+(function() {{
+  const v1 = document.getElementById('v1_{uid}');
+  const v2 = document.getElementById('v2_{uid}');
+  const sl = document.getElementById('sl_{uid}');
+  const pb = document.getElementById('pb_{uid}');
+  const tl = document.getElementById('tl_{uid}');
+  let playing = false, seeking = false, myChart = null;
+
+  function fmt(t) {{ return t.toFixed(1) + ' s'; }}
+  function dur()  {{ return (v1.duration && isFinite(v1.duration)) ? v1.duration : 0; }}
+
+  function seekTo(t) {{
+    const d = dur(); if (!d) return;
+    seeking = true;
+    t = Math.max(0, Math.min(t, d));
+    v1.currentTime = t; v2.currentTime = t;
+    sl.value = Math.round((t / d) * 10000);
+    tl.textContent = fmt(t) + ' / ' + fmt(d);
+    setTimeout(() => {{ seeking = false; }}, 150);
+  }}
+
+  v1.addEventListener('loadedmetadata', () => {{
+    tl.textContent = fmt(0) + ' / ' + fmt(dur());
+  }});
+
+  v1.addEventListener('timeupdate', () => {{
+    if (seeking) return;
+    const d = dur();
+    if (d > 0) {{
+      sl.value = Math.round((v1.currentTime / d) * 10000);
+      tl.textContent = fmt(v1.currentTime) + ' / ' + fmt(d);
+      if (Math.abs(v1.currentTime - v2.currentTime) > 0.15)
+        v2.currentTime = v1.currentTime;
+    }}
+    if (myChart) myChart.update('none');
+  }});
+
+  v1.addEventListener('ended', () => {{
+    playing = false; pb.textContent = '▶ Play'; v2.pause();
+  }});
+
+  window['seek_{uid}'] = function(val) {{
+    const d = dur(); if (!d) return;
+    seekTo((val / 10000) * d);
+  }};
+  window['togglePlay_{uid}'] = function() {{
+    if (playing) {{ v1.pause(); v2.pause(); pb.textContent = '▶ Play'; playing = false; }}
+    else {{ v1.play(); v2.play(); pb.textContent = '⏸ Pause'; playing = true; }}
+  }};
+
+  // ── Chart ─────────────────────────────────────────────────────────────────
+  const chartData = {chart_json};
+  const plotCols  = {plot_cols_js};
+  const palette   = {palette_js};
+
+  if (chartData.length && plotCols.length) {{
+    const timestamps = chartData.map(r => r.timestamp_sec);
+
+    const seekLinePlugin = {{
+      id: 'seekLine',
+      afterDraw(chart) {{
+        if (!dur() || !v1.readyState) return;
+        const x = chart.scales.x.getPixelForValue(v1.currentTime);
+        const {{ ctx, chartArea: {{ top, bottom }} }} = chart;
+        ctx.save();
+        ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom);
+        ctx.strokeStyle = '#7eb8f7'; ctx.lineWidth = 2;
+        ctx.setLineDash([4, 3]); ctx.stroke(); ctx.restore();
+      }},
+    }};
+
+    const colLabels = {{
+      'speed_proxy': 'Speed (px/s)',
+      'balance_score': 'Balance (0-100)',
+      'line_efficiency_score': 'Line Eff. (0-100)',
+      'trunk_angle_deg': 'Trunk Angle (°)',
+    }};
+    const datasets = plotCols.map((col, i) => ({{
+      label: colLabels[col] || col.replace(/_/g, ' '),
+      data: chartData.map(r => r[col] ?? null),
+      borderColor: palette[i % palette.length],
+      backgroundColor: palette[i % palette.length] + '22',
+      borderWidth: 1.5, pointRadius: 0, tension: 0.3, spanGaps: true,
+    }}));
+
+    const ctx = document.getElementById('chart_{uid}').getContext('2d');
+    myChart = new Chart(ctx, {{
+      type: 'line',
+      data: {{ labels: timestamps, datasets }},
+      plugins: [seekLinePlugin],
+      options: {{
+        responsive: true, maintainAspectRatio: true, animation: false,
+        interaction: {{ mode: 'index', intersect: false }},
+        plugins: {{
+          legend: {{ labels: {{ color: '#aaa', font: {{ size: 11 }}, boxWidth: 12 }} }},
+          tooltip: {{ callbacks: {{ title: (items) => fmt(items[0].parsed.x) }} }},
+        }},
+        scales: {{
+          x: {{
+            type: 'linear',
+            title: {{ display: true, text: 'Time (s)', color: '#666' }},
+            ticks: {{ color: '#666', maxTicksLimit: 10 }},
+            grid: {{ color: '#2a2a2a' }},
+          }},
+          y: {{ ticks: {{ color: '#666' }}, grid: {{ color: '#2a2a2a' }} }},
+        }},
+        onClick(evt, _elements, chart) {{
+          // evt.x is viewport-relative; convert to canvas-relative first
+          const pos = Chart.helpers.getRelativePosition(evt, chart);
+          const xVal = chart.scales.x.getValueForPixel(pos.x);
+          if (xVal != null) seekTo(xVal);
+        }},
+      }},
+    }});
+  }}
+}})();
+</script>
+"""
+    components.html(html, height=component_height)
+
 
 # ── Config & session state ────────────────────────────────────────────────────
 config = AppConfig()
@@ -121,14 +350,23 @@ with tab_analyze:
             st.session_state.session_dir = None
 
         # ── Input / annotated side-by-side ────────────────────────────────
-        col_in, col_out = st.columns(2)
-        with col_in:
+        if st.session_state.artifacts is not None:
+            _df_sync = pd.read_csv(st.session_state.artifacts.features_csv_path)
+            _pcols_sync = [c for c in [
+                "balance_score", "line_efficiency_score", "speed_proxy", "trunk_angle_deg",
+            ] if c in _df_sync.columns]
+            sync_video_player(
+                st.session_state.temp_video_path,
+                st.session_state.artifacts.annotated_video_path,
+                label1="Input video",
+                label2="Annotated output",
+                df=_df_sync,
+                plot_cols=_pcols_sync,
+            )
+        else:
             st.markdown('<p class="section-label">Input video</p>', unsafe_allow_html=True)
             st.video(st.session_state.temp_video_path, width=640)
-        with col_out:
-            if st.session_state.artifacts is not None:
-                st.markdown('<p class="section-label">Annotated output</p>', unsafe_allow_html=True)
-                st.video(st.session_state.artifacts.annotated_video_path, width=640)
+            st.caption("Annotated output will appear here after processing.")
 
         # ── Process button ────────────────────────────────────────────────
         if st.button("⚡ Process video", type="primary", use_container_width=True):
@@ -171,12 +409,6 @@ with tab_analyze:
             m3.metric("Avg speed proxy", artifacts.summary.avg_speed_proxy)
 
             df = pd.read_csv(artifacts.features_csv_path)
-            plot_cols = [c for c in [
-                "balance_score", "line_efficiency_score", "speed_proxy", "trunk_angle_deg",
-            ] if c in df.columns]
-            if plot_cols:
-                st.markdown("#### Metric trends")
-                st.line_chart(df[plot_cols])
 
             with st.expander("Per-frame data"):
                 st.dataframe(df, width="stretch")
@@ -220,19 +452,21 @@ with tab_gallery:
     else:
         if has_legacy:
             with st.expander("legacy  ·  (pre-session output)"):
-                vc1, vc2 = st.columns(2)
-                with vc2:
+                legacy_input = output_root / "input.mp4"
+                legacy_csv = output_root / "features.csv"
+                _df_leg = pd.read_csv(legacy_csv) if legacy_csv.exists() else None
+                _pcols_leg = [c for c in [
+                    "balance_score", "line_efficiency_score", "speed_proxy",
+                ] if _df_leg is not None and c in _df_leg.columns] or None
+                if legacy_input.exists():
+                    sync_video_player(
+                        str(legacy_input), str(legacy_annotated),
+                        label1="Input", label2="Annotated",
+                        df=_df_leg, plot_cols=_pcols_leg,
+                    )
+                else:
                     st.markdown('<p class="section-label">Annotated</p>', unsafe_allow_html=True)
                     st.video(str(legacy_annotated), width=480)
-                csv_p = output_root / "features.csv"
-                if csv_p.exists():
-                    df_g = pd.read_csv(csv_p)
-                    pcols = [c for c in [
-                        "balance_score", "line_efficiency_score", "speed_proxy",
-                    ] if c in df_g.columns]
-                    if pcols:
-                        st.markdown("##### Metric trends")
-                        st.line_chart(df_g[pcols])
 
         for sdir in sessions:
             meta_file = sdir / "meta.json"
@@ -246,24 +480,22 @@ with tab_gallery:
                 mc2.metric("Line efficiency", meta.get("avg_line_efficiency_score", "—"))
                 mc3.metric("Speed proxy", meta.get("avg_speed_proxy", "—"))
 
-                vc1, vc2 = st.columns(2)
-                with vc1:
-                    if (sdir / "input.mp4").exists():
-                        st.markdown('<p class="section-label">Input</p>', unsafe_allow_html=True)
-                        st.video(str(sdir / "input.mp4"), width=480)
-                with vc2:
-                    st.markdown('<p class="section-label">Annotated</p>', unsafe_allow_html=True)
-                    st.video(str(sdir / "annotated_output.mp4"), width=480)
-
+                input_vid = sdir / "input.mp4"
+                annotated_vid = sdir / "annotated_output.mp4"
                 csv_p = sdir / "features.csv"
-                if csv_p.exists():
-                    df_g = pd.read_csv(csv_p)
-                    pcols = [c for c in [
-                        "balance_score", "line_efficiency_score", "speed_proxy",
-                    ] if c in df_g.columns]
-                    if pcols:
-                        st.markdown("##### Metric trends")
-                        st.line_chart(df_g[pcols])
+                _df_s = pd.read_csv(csv_p) if csv_p.exists() else None
+                _pcols_s = [c for c in [
+                    "balance_score", "line_efficiency_score", "speed_proxy",
+                ] if _df_s is not None and c in _df_s.columns] or None
+                if input_vid.exists():
+                    sync_video_player(
+                        str(input_vid), str(annotated_vid),
+                        label1="Input", label2="Annotated",
+                        df=_df_s, plot_cols=_pcols_s,
+                    )
+                else:
+                    st.markdown('<p class="section-label">Annotated</p>', unsafe_allow_html=True)
+                    st.video(str(annotated_vid), width=480)
 
                 coaching = meta.get("coaching_summary", "")
                 if coaching:

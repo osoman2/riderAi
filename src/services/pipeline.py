@@ -35,7 +35,7 @@ class RiderAIPipeline:
         poses = smooth_poses_moving_average(poses, window=self.config.smoothing_window)
 
         trajectory_deltas = compute_trajectory_deltas(poses)
-        features = build_frame_features(poses, trajectory_deltas)
+        features = build_frame_features(poses, trajectory_deltas, fps=fps)
         summary = build_clip_summary(features)
 
         if self.config.use_groq_feedback and self.config.groq_api_key:

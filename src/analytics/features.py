@@ -18,7 +18,14 @@ def _xy(frame_pose: FramePose, name: str):
 def build_frame_features(
     poses: List[FramePose],
     trajectory_deltas: List[tuple[float | None, float | None]],
+    fps: float = 30.0,
 ) -> List[FrameFeatures]:
+    """Build per-frame features.
+
+    ``speed_proxy`` is expressed in **pixels per second** (px/s), computed as
+    the Euclidean displacement of the rider's bounding-box centre between
+    consecutive frames multiplied by *fps*.
+    """
     features: List[FrameFeatures] = []
 
     for pose, (dx, dy) in zip(poses, trajectory_deltas):
@@ -51,7 +58,7 @@ def build_frame_features(
 
         speed_proxy = None
         if dx is not None and dy is not None:
-            speed_proxy = (dx**2 + dy**2) ** 0.5
+            speed_proxy = (dx**2 + dy**2) ** 0.5 * fps  # px/s
 
         posture_label = classify_posture(trunk_angle)
         terrain_label = approximate_terrain(speed_proxy, posture_label)
