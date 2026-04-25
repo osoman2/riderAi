@@ -3,6 +3,8 @@
 venv/
 env/
 ENV/
+backend/.venv/
+frontend/.venv/
 
 # Models
 models/
@@ -32,6 +34,10 @@ build/
 # Streamlit
 .streamlit/secrets.toml
 
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
 # IDE
 .vscode/
 .idea/
@@ -40,6 +46,27 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# Playwright / MCP screenshots (root level)
+/*.png
+/*.jpg
+/*.jpeg
+/*.webp
+
+# Data (session inputs/outputs — any depth)
+data/inputs/
+data/outputs/
+streamlit/data/inputs/
+streamlit/data/outputs/
+**/data/inputs/
+**/data/outputs/
+
+# Reference folders (not needed for deployment)
+Referencia_front/
+Microproyect_guidelines/
+
+# Playwright MCP session artifacts
+.playwright-mcp/
 
 # Secrets
 secrets.toml

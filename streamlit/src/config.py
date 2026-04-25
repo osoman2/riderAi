@@ -11,7 +11,7 @@ load_dotenv()
 class AppConfig:
     output_dir: str = os.getenv("OUTPUT_DIR", "data/outputs")
     temp_dir: str = os.getenv("TEMP_DIR", "data/inputs")
-    model_path: str = os.getenv("MODEL_PATH", "models/yolo26_pose.pt")
+    model_path: str = os.getenv("MODEL_PATH", "models/yolo26m-pose.pt")
     min_keypoint_conf: float = float(os.getenv("MIN_KEYPOINT_CONF", "0.35"))
     smoothing_window: int = int(os.getenv("SMOOTHING_WINDOW", "5"))
 
