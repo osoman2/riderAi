@@ -4,6 +4,7 @@ import { SPORTS, Nav } from './core.jsx';
 import { OverviewPage, AnalyzePage, SessionsPage, MethodPage } from './pages.jsx';
 import { SessionReviewPage } from './review.jsx';
 import { LivePage } from './live.jsx';
+import { KartingDemoPage } from './karting.jsx';
 import { checkHealth } from './api.js';
 
 const STORAGE_KEY = 'drcoach-v2';
@@ -128,12 +129,13 @@ function App() {
   const sc = SPORTS[state.sport] || SPORTS.downhill;
 
   const PAGES = {
-    overview: OverviewPage,
-    analyze:  AnalyzePage,
-    live:     LivePage,
-    sessions: SessionsPage,
-    review:   SessionReviewPage,
-    method:   MethodPage,
+    overview:      OverviewPage,
+    analyze:       AnalyzePage,
+    live:          LivePage,
+    sessions:      SessionsPage,
+    review:        SessionReviewPage,
+    method:        MethodPage,
+    'karting-demo': KartingDemoPage,
   };
   const Page = PAGES[state.page] || OverviewPage;
 

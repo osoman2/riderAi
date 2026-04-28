@@ -580,12 +580,13 @@ export function AnalyzePage({ state, setState }) {
 
 const DEMO_SESSIONS = [
   { session_id: 'demo-s001', sport: 'downhill', original_filename: 'la_parva_run3.mp4', avg_balance_score: 78, avg_line_efficiency_score: 82, avg_speed_proxy: 3.4 },
-  { session_id: 'demo-s002', sport: 'karting',  original_filename: 'circuito1_q3.mp4',  avg_balance_score: null, avg_line_efficiency_score: null, avg_speed_proxy: null },
+  { session_id: 'karting-demo-luciano', sport: 'karting', original_filename: 'kart_fpv_luciano.mp4',  avg_balance_score: null, avg_line_efficiency_score: null, avg_speed_proxy: null, _kartingDemo: true, _kartingVideo: 'luciano', _kartingMode: 'fpv_follow' },
+  { session_id: 'karting-demo-gopro',   sport: 'karting', original_filename: 'gopro_helmet_cam.mp4', avg_balance_score: null, avg_line_efficiency_score: null, avg_speed_proxy: null, _kartingDemo: true, _kartingVideo: 'gopro',   _kartingMode: 'action_cam' },
   { session_id: 'demo-s003', sport: 'downhill', original_filename: 'la_parva_run1.mp4', avg_balance_score: 84, avg_line_efficiency_score: 76, avg_speed_proxy: 3.1 },
   { session_id: 'demo-s004', sport: 'surf',     original_filename: 'punta_lobos.mp4',   avg_balance_score: null, avg_line_efficiency_score: null, avg_speed_proxy: null },
 ];
 
-// Non-downhill demo sessions always shown as reference (karting/surf shells)
+// Non-downhill demo sessions always shown as reference (karting demo + surf shell)
 const SHELL_DEMOS = DEMO_SESSIONS.filter(s => s.sport !== 'downhill');
 
 function formatDate(session_id) {
@@ -628,7 +629,15 @@ function SessionRow({ sess, lang, onClick }) {
         </div>
       </div>
       <div style={{ display: 'flex', gap: 18 }}>
-        {scores.length > 0 ? scores.map(s => (
+        {sess._kartingDemo ? (
+          <span style={{
+            fontFamily: 'Space Mono, monospace', fontSize: 9,
+            color: sc.color, background: sc.color + '15',
+            border: `1px solid ${sc.color}40`, borderRadius: 3, padding: '3px 8px',
+          }}>
+            DEMO ◆
+          </span>
+        ) : scores.length > 0 ? scores.map(s => (
           <div key={s.k} style={{ textAlign: 'center' }}>
             <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 17, color: sc.color, lineHeight: 1 }}>{s.v}</div>
             <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 8, color: '#6b6b6b', textTransform: 'uppercase', marginTop: 2 }}>{s.k}</div>
@@ -723,7 +732,13 @@ export function SessionsPage({ state, setState }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
           {list.map(sess => (
             <SessionRow key={sess.session_id} sess={sess} lang={lang}
-              onClick={() => setState(s => ({ ...s, reviewSessionId: sess.session_id, sport: sess.sport || s.sport, page: 'review' }))} />
+              onClick={() => {
+                if (sess._kartingDemo) {
+                  setState(s => ({ ...s, sport: 'karting', page: 'karting-demo', kartingVideo: sess._kartingVideo, kartingMode: sess._kartingMode }));
+                } else {
+                  setState(s => ({ ...s, reviewSessionId: sess.session_id, sport: sess.sport || s.sport, page: 'review' }));
+                }
+              }} />
           ))}
           {list.length === 0 && !loading && (
             <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 14, color: '#555', padding: '40px 0', textAlign: 'center' }}>
@@ -738,47 +753,264 @@ export function SessionsPage({ state, setState }) {
 
 // ── Method ────────────────────────────────────────────────────────────────────
 
+const SPORT_TIERS = {
+  karting: [
+    {
+      tier: 0,
+      status: 'live',
+      statusLabel: { en: 'LIVE NOW', es: 'EN VIVO' },
+      requires: { en: 'Any video — no labelled data', es: 'Cualquier video — sin datos etiquetados' },
+      pipeline: [
+        { en: 'YOLOv8n + ByteTrack', es: 'YOLOv8n + ByteTrack' },
+        { en: 'SAM2 Image + HSV', es: 'SAM2 Image + HSV' },
+        { en: 'Groq VLM (1 call)', es: 'Groq VLM (1 llamada)' },
+      ],
+      outputs: [
+        { en: 'Annotated video', es: 'Video anotado' },
+        { en: 'LAT POS · consistency · edge use', es: 'LAT POS · consistencia · uso de pista' },
+        { en: 'GAP BAR · KERB L/R', es: 'GAP BAR · KERB izq/der' },
+        { en: 'VLM coaching text', es: 'Texto de coaching VLM' },
+      ],
+    },
+    {
+      tier: 1,
+      status: 'planned',
+      statusLabel: { en: '~2 MONTHS', es: '~2 MESES' },
+      requires: { en: '50+ labelled frames from this track + 50 sessions', es: '50+ frames etiquetados de este kartodromo + 50 sesiones' },
+      pipeline: [
+        { en: 'YOLO fine-tuned on track', es: 'YOLO fine-tuned en pista' },
+        { en: 'Lap timing + corner seg.', es: 'Tiempo por vuelta + seg. de curvas' },
+        { en: 'Helmet + gap trend', es: 'Casco + tendencia de gap' },
+      ],
+      outputs: [
+        { en: 'Per-lap breakdown', es: 'Desglose por vuelta' },
+        { en: 'Brake · turn-in · apex · exit scores', es: 'Scores de freno · giro · ápex · salida' },
+        { en: 'Overtaking opportunity flags', es: 'Alertas de oportunidad de sobrepaso' },
+        { en: 'Sector-level coaching', es: 'Coaching por sector' },
+      ],
+    },
+    {
+      tier: 2,
+      status: 'roadmap',
+      statusLabel: { en: '6+ MONTHS', es: '6+ MESES' },
+      requires: { en: 'Multi-cam rig + GPS/OBD + expert reference runs', es: 'Multi-cam + GPS/OBD + vueltas de referencia de experto' },
+      pipeline: [
+        { en: 'Multi-modal fusion', es: 'Fusión multimodal' },
+        { en: 'Expert ideal-line model', es: 'Modelo de línea ideal experta' },
+        { en: 'Real-time edge inference', es: 'Inferencia en tiempo real (edge)' },
+      ],
+      outputs: [
+        { en: 'Live coaching overlay', es: 'Overlay de coaching en vivo' },
+        { en: 'Ideal-line delta per corner', es: 'Delta vs. línea ideal por curva' },
+        { en: 'Telemetry charts (speed · G · throttle)', es: 'Telemetría (velocidad · G · acelerador)' },
+        { en: 'Driver progression score', es: 'Score de progresión del piloto' },
+      ],
+    },
+  ],
+  downhill: [
+    {
+      tier: 0,
+      status: 'live',
+      statusLabel: { en: 'LIVE NOW', es: 'EN VIVO' },
+      requires: { en: 'Any video — no labelled data', es: 'Cualquier video — sin datos etiquetados' },
+      pipeline: [
+        { en: 'MediaPipe Pose (17 kpts)', es: 'MediaPipe Pose (17 puntos)' },
+        { en: 'Terrain classifier', es: 'Clasificador de terreno' },
+        { en: 'Groq VLM (1 call)', es: 'Groq VLM (1 llamada)' },
+      ],
+      outputs: [
+        { en: 'Annotated video', es: 'Video anotado' },
+        { en: 'Balance score · line efficiency', es: 'Score de balance · eficiencia de línea' },
+        { en: 'Terrain context cues', es: 'Señales de contexto de terreno' },
+        { en: 'VLM coaching text', es: 'Texto de coaching VLM' },
+      ],
+    },
+    {
+      tier: 1,
+      status: 'planned',
+      statusLabel: { en: '~3 MONTHS', es: '~3 MESES' },
+      requires: { en: '100+ annotated stances + terrain labels', es: '100+ posturas anotadas + etiquetas de terreno' },
+      pipeline: [
+        { en: 'Fine-tuned pose model', es: 'Modelo de pose fine-tuned' },
+        { en: 'Terrain segmentation', es: 'Segmentación de terreno' },
+        { en: 'Section-aware scoring', es: 'Scoring por tipo de sección' },
+      ],
+      outputs: [
+        { en: 'Per-section posture scores', es: 'Scores de postura por sección' },
+        { en: 'Posture trend over session', es: 'Tendencia postural en la sesión' },
+        { en: 'Terrain-specific guidance', es: 'Guía específica por terreno' },
+        { en: 'Run-over-run comparison', es: 'Comparación bajada a bajada' },
+      ],
+    },
+    {
+      tier: 2,
+      status: 'roadmap',
+      statusLabel: { en: '12+ MONTHS', es: '12+ MESES' },
+      requires: { en: 'IMU + GPS + expert reference runs', es: 'IMU + GPS + bajadas de referencia de experto' },
+      pipeline: [
+        { en: 'Sensor + video fusion', es: 'Fusión sensor + video' },
+        { en: 'Expert stance matching', es: 'Matching con postura de experto' },
+        { en: 'Real-time edge inference', es: 'Inferencia en tiempo real (edge)' },
+      ],
+      outputs: [
+        { en: 'Real-time posture feedback', es: 'Feedback de postura en tiempo real' },
+        { en: 'Force / load analysis', es: 'Análisis de fuerzas / carga' },
+        { en: 'Trajectory vs. expert delta', es: 'Trayectoria vs. delta de experto' },
+        { en: 'Multi-run progression', es: 'Progresión multi-bajada' },
+      ],
+    },
+  ],
+  surf: [
+    {
+      tier: 0,
+      status: 'shell',
+      statusLabel: { en: 'COMING', es: 'PRÓXIMO' },
+      requires: { en: 'Any video — no labelled data', es: 'Cualquier video — sin datos etiquetados' },
+      pipeline: [
+        { en: 'YOLOv8 + SAM2', es: 'YOLOv8 + SAM2' },
+        { en: 'Pose estimation', es: 'Estimación de pose' },
+        { en: 'Wave classifier', es: 'Clasificador de ola' },
+      ],
+      outputs: [
+        { en: 'Annotated video', es: 'Video anotado' },
+        { en: 'Wave phase detection', es: 'Detección de fase de ola' },
+        { en: 'Balance / posture analysis', es: 'Análisis de balance / postura' },
+        { en: 'Maneuver tagging', es: 'Etiquetado de maniobras' },
+      ],
+    },
+    {
+      tier: 1,
+      status: 'planned',
+      statusLabel: { en: '~4 MONTHS', es: '~4 MESES' },
+      requires: { en: '200+ labelled wave/maneuver examples', es: '200+ ejemplos etiquetados de ola/maniobra' },
+      pipeline: [
+        { en: 'Wave segmentation model', es: 'Modelo de segmentación de ola' },
+        { en: 'Maneuver classifier', es: 'Clasificador de maniobra' },
+        { en: 'Timing analysis', es: 'Análisis de timing' },
+      ],
+      outputs: [
+        { en: 'Maneuver scores', es: 'Scores de maniobra' },
+        { en: 'Wave-selection quality', es: 'Calidad de selección de ola' },
+        { en: 'Timing feedback', es: 'Feedback de timing' },
+        { en: 'Session maneuver log', es: 'Log de maniobras de sesión' },
+      ],
+    },
+    {
+      tier: 2,
+      status: 'roadmap',
+      statusLabel: { en: '12+ MONTHS', es: '12+ MESES' },
+      requires: { en: 'Drone + board sensors + GPS + judge reference', es: 'Drone + sensores de tabla + GPS + referencia de juez' },
+      pipeline: [
+        { en: 'Multi-view fusion', es: 'Fusión multi-vista' },
+        { en: 'Wave quality model', es: 'Modelo de calidad de ola' },
+        { en: 'Judge-style scoring', es: 'Scoring estilo juez' },
+      ],
+      outputs: [
+        { en: 'Live heat scoring', es: 'Scoring de heat en vivo' },
+        { en: 'Wave correlation', es: 'Correlación con ola' },
+        { en: 'Judge-style feedback', es: 'Feedback estilo juez' },
+        { en: 'Priority / positioning advice', es: 'Consejo de prioridad / posicionamiento' },
+      ],
+    },
+  ],
+};
+
+function TierBlock({ tier, sc, lang }) {
+  const isLive   = tier.status === 'live';
+  const isShell  = tier.status === 'shell';
+  const isPlanned = tier.status === 'planned';
+
+  const statusColor = isLive ? '#22c55e' : isShell ? '#555' : '#6b6b6b';
+  const borderColor = isLive ? sc.color + '50' : '#222';
+  const bg          = isLive ? sc.color + '07' : '#111111';
+
+  return (
+    <div style={{ border: `1px solid ${borderColor}`, borderRadius: 8, overflow: 'hidden', background: bg }}>
+      {/* Header */}
+      <div style={{
+        padding: '9px 16px', background: '#161616', borderBottom: '1px solid #1a1a1a',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      }}>
+        <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: isLive ? sc.color : '#555', letterSpacing: '0.1em' }}>
+          TIER {tier.tier}
+        </span>
+        <span style={{
+          fontFamily: 'Space Mono, monospace', fontSize: 8, letterSpacing: '0.08em',
+          color: statusColor, background: statusColor + '18',
+          border: `1px solid ${statusColor}40`, borderRadius: 3, padding: '2px 8px',
+        }}>
+          {tl(tier.statusLabel, lang)}
+        </span>
+      </div>
+
+      {/* Flow row */}
+      <div style={{ padding: '14px 16px', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+
+        {/* Input */}
+        <div style={{ background: '#1a1a1a', borderRadius: 6, padding: '9px 13px', minWidth: 130, maxWidth: 200 }}>
+          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 8, color: '#3a3a3a', letterSpacing: '0.08em', marginBottom: 5 }}>INPUT</div>
+          <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 12, color: isLive ? '#EDEDE8' : '#555', lineHeight: 1.4 }}>
+            {tl(tier.requires, lang)}
+          </div>
+        </div>
+
+        <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 14, color: '#333', alignSelf: 'center', paddingTop: 4 }}>→</div>
+
+        {/* Pipeline steps */}
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+          {tier.pipeline.map((step, i) => (
+            <React.Fragment key={i}>
+              <div style={{
+                border: `1px solid ${isLive ? sc.color + '35' : '#1a1a1a'}`,
+                borderRadius: 6, padding: '7px 12px', background: isLive ? sc.color + '09' : '#0d0d0d',
+              }}>
+                <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 12, color: isLive ? '#EDEDE8' : '#3a3a3a', whiteSpace: 'nowrap' }}>
+                  {tl(step, lang)}
+                </div>
+              </div>
+              {i < tier.pipeline.length - 1 && (
+                <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 12, color: '#222' }}>→</div>
+              )}
+            </React.Fragment>
+          ))}
+        </div>
+
+        <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 14, color: '#333', alignSelf: 'center', paddingTop: 4 }}>→</div>
+
+        {/* Outputs */}
+        <div style={{ background: '#1a1a1a', borderRadius: 6, padding: '9px 13px' }}>
+          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 8, color: '#3a3a3a', letterSpacing: '0.08em', marginBottom: 5 }}>OUTPUTS</div>
+          {tier.outputs.map((out, i) => (
+            <div key={i} style={{ display: 'flex', gap: 7, alignItems: 'center', marginBottom: i < tier.outputs.length - 1 ? 4 : 0 }}>
+              <span style={{ color: isLive ? sc.color : '#222', fontSize: 9, flexShrink: 0 }}>◆</span>
+              <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 12, color: isLive ? '#EDEDE8' : '#3a3a3a' }}>
+                {tl(out, lang)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function MethodPage({ state }) {
   const { sport, lang } = state;
   const sc = SPORTS[sport];
-
-  const FLOWS = {
-    downhill: [
-      { step: 'Upload',   detail: { en: 'Session video', es: 'Video de sesión' } },
-      { step: 'Pose',     detail: { en: 'Body keypoints', es: 'Puntos del cuerpo' } },
-      { step: 'Terrain',  detail: { en: 'Context cues', es: 'Señales de contexto' } },
-      { step: 'Line',     detail: { en: 'Path scoring', es: 'Puntuación de línea' } },
-      { step: 'Guidance', detail: { en: 'Next step', es: 'Próximo paso' } },
-    ],
-    karting: [
-      { step: 'Upload',      detail: { en: 'Video + speed', es: 'Video + velocidad' } },
-      { step: 'Perception',  detail: { en: 'Edges · apex · kart', es: 'Bordes · apex · kart' } },
-      { step: 'Segment',     detail: { en: 'Straight · brake · turn-in · apex · exit', es: 'Recta · freno · giro · apex · salida' } },
-      { step: 'Geometry',    detail: { en: 'Lateral pos · heading · curvature', es: 'Posición lateral · dirección · curvatura' } },
-      { step: 'Score',       detail: { en: 'brake_score · turn_score', es: 'brake_score · turn_score' } },
-      { step: 'Guidance',    detail: { en: 'Corner-aware decisions', es: 'Decisiones por esquina' } },
-    ],
-    surf: [
-      { step: 'Upload',   detail: { en: 'Session video', es: 'Video de sesión' } },
-      { step: 'Wave',     detail: { en: 'Phase detection', es: 'Detección de fase' } },
-      { step: 'Posture',  detail: { en: 'Balance analysis', es: 'Análisis de equilibrio' } },
-      { step: 'Tags',     detail: { en: 'Maneuver tagging', es: 'Etiquetado de maniobras' } },
-      { step: 'Guidance', detail: { en: 'Timing feedback', es: 'Retroalimentación' } },
-    ],
-  };
+  const tiers = SPORT_TIERS[sport] || SPORT_TIERS.downhill;
 
   const CAP_MATRIX = [
-    { en: 'Video analysis',     es: 'Análisis de video',      dh: true,  kt: true,  sf: true  },
-    { en: 'Pose / posture',     es: 'Pose / postura',         dh: true,  kt: false, sf: true  },
-    { en: 'Route segmentation', es: 'Segmentación de ruta',   dh: false, kt: true,  sf: false },
-    { en: 'Brake scoring',      es: 'Puntuación de freno',    dh: false, kt: true,  sf: false },
-    { en: 'Turn scoring',       es: 'Puntuación de giro',     dh: false, kt: true,  sf: false },
-    { en: 'Line review',        es: 'Revisión de línea',      dh: true,  kt: true,  sf: false },
-    { en: 'Wave context',       es: 'Contexto de ola',        dh: false, kt: false, sf: true  },
-    { en: 'Session playback',   es: 'Reproducción',           dh: true,  kt: true,  sf: true  },
+    { en: 'Video analysis',       es: 'Análisis de video',        dh: true,  kt: true,  sf: true  },
+    { en: 'Pose / posture',       es: 'Pose / postura',           dh: true,  kt: false, sf: true  },
+    { en: 'Track segmentation',   es: 'Segmentación de pista',    dh: false, kt: true,  sf: false },
+    { en: 'Lateral position',     es: 'Posición lateral',         dh: false, kt: true,  sf: false },
+    { en: 'Line review',          es: 'Revisión de línea',        dh: true,  kt: true,  sf: false },
+    { en: 'Wave / terrain ctx.',  es: 'Contexto ola / terreno',   dh: true,  kt: false, sf: true  },
+    { en: 'Multi-kart tracking',  es: 'Tracking multi-kart',      dh: false, kt: true,  sf: false },
+    { en: 'VLM coaching',         es: 'Coaching VLM',             dh: true,  kt: true,  sf: true  },
+    { en: 'Session playback',     es: 'Reproducción',             dh: true,  kt: true,  sf: true  },
   ];
 
-  const flow = FLOWS[sport] || FLOWS.downhill;
   const sportList = Object.values(SPORTS);
 
   return (
@@ -794,29 +1026,14 @@ export function MethodPage({ state }) {
           </h2>
         </div>
 
-        {/* Signal path */}
+        {/* Tier flows */}
         <div style={{ marginBottom: 48 }}>
           <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: sc.color, letterSpacing: '0.12em', marginBottom: 16 }}>
-            {tl(sc.label, lang).toUpperCase()} / SIGNAL PATH
+            {tl(sc.label, lang).toUpperCase()} — {lang === 'es' ? 'PLAN DE CAPACIDADES POR TIER' : 'CAPABILITY ROADMAP BY TIER'}
           </div>
-          <div style={{ display: 'flex', alignItems: 'stretch', flexWrap: 'wrap', gap: 0 }}>
-            {flow.map((node, i) => (
-              <React.Fragment key={node.step}>
-                <div style={{
-                  border: `1px solid ${sc.color}45`, borderRadius: 8, padding: '14px 18px',
-                  background: sc.color + '09', minWidth: 110,
-                }}>
-                  <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: sc.color, letterSpacing: '0.1em', marginBottom: 5 }}>
-                    {node.step.toUpperCase()}
-                  </div>
-                  <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 12, color: '#EDEDE8', lineHeight: 1.4 }}>
-                    {tl(node.detail, lang)}
-                  </div>
-                </div>
-                {i < flow.length - 1 && (
-                  <div style={{ display: 'flex', alignItems: 'center', padding: '0 6px', color: sc.color + '70', fontFamily: 'Space Mono, monospace', fontSize: 14 }}>→</div>
-                )}
-              </React.Fragment>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {tiers.map(tier => (
+              <TierBlock key={tier.tier} tier={tier} sc={sc} lang={lang} />
             ))}
           </div>
         </div>
@@ -827,7 +1044,7 @@ export function MethodPage({ state }) {
             {lang === 'es' ? 'MATRIZ DE CAPACIDADES' : 'CAPABILITY MATRIX'}
           </div>
           <div style={{ border: '1px solid #222', borderRadius: 8, overflow: 'hidden' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '200px repeat(3, 1fr)', background: '#161616', borderBottom: '1px solid #222' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '220px repeat(3, 1fr)', background: '#161616', borderBottom: '1px solid #222' }}>
               <div style={{ padding: '10px 16px', fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#6b6b6b' }}>CAPABILITY</div>
               {sportList.map(s => (
                 <div key={s.id} style={{ padding: '10px 0', fontFamily: 'Space Mono, monospace', fontSize: 9, color: s.color, textAlign: 'center', letterSpacing: '0.08em' }}>
@@ -837,7 +1054,7 @@ export function MethodPage({ state }) {
             </div>
             {CAP_MATRIX.map((row, i) => (
               <div key={i} style={{
-                display: 'grid', gridTemplateColumns: '200px repeat(3, 1fr)',
+                display: 'grid', gridTemplateColumns: '220px repeat(3, 1fr)',
                 borderBottom: i < CAP_MATRIX.length - 1 ? '1px solid #22222228' : 'none',
                 background: i % 2 ? '#0f0f0f' : 'transparent',
                 alignItems: 'center',

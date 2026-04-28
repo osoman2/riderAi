@@ -1,0 +1,48 @@
+{
+  "video": "karting/assets/gopro_helmet.mp4",
+  "date": "2026-04-28",
+  "frames_analyzed": 600,
+  "karts_detected": 21,
+  "segmentation": "SAM2 Video / HSV fallback",
+  "tracker": "YOLOv8n + ByteTrack",
+  "vlm": "Groq llama-4-scout-17b-16e-instruct",
+  "top_karts": [
+    237,
+    1,
+    206,
+    101
+  ],
+  "driver_scores": {
+    "237": {
+      "score": 51.3,
+      "consistency": 61.8,
+      "edge_use": 35.6,
+      "frames_detected": 61,
+      "lat_mean": 0.339
+    },
+    "1": {
+      "score": 46.2,
+      "consistency": 59.1,
+      "edge_use": 26.9,
+      "frames_detected": 37,
+      "lat_mean": 0.382
+    },
+    "206": {
+      "score": 39.6,
+      "consistency": 46.1,
+      "edge_use": 29.7,
+      "frames_detected": 28,
+      "lat_mean": 0.467
+    },
+    "101": {
+      "score": 50.8,
+      "consistency": 63.8,
+      "edge_use": 31.3,
+      "frames_detected": 26,
+      "lat_mean": 0.378
+    }
+  },
+  "coaching": {
+    "driver": "*   La posicion del piloto en la pista se observa en el carril derecho, cerca de la barrera de seguridad.\n*   No se observa otro kart adelante, por lo que el piloto parece ir solo en ese momento.\n*   La trayectoria que se observa es conservadora, ya que el piloto parece ir por la parte externa de la curva en lugar de intentar un sobrepaso arriesgado o agresivo."
+  }
+}
