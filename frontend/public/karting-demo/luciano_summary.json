@@ -1,0 +1,24 @@
+{
+  "video": "karting/assets/kart_fpv_luciano.mp4",
+  "date": "2026-04-28",
+  "frames_analyzed": 789,
+  "karts_detected": 1,
+  "segmentation": "SAM2 Video / HSV fallback",
+  "tracker": "YOLOv8n + ByteTrack",
+  "vlm": "Groq llama-4-scout-17b-16e-instruct",
+  "top_karts": [
+    1
+  ],
+  "driver_scores": {
+    "1": {
+      "score": 23.6,
+      "consistency": 0.0,
+      "edge_use": 59.0,
+      "frames_detected": 182,
+      "lat_mean": 0.564
+    }
+  },
+  "coaching": {
+    "driver": "- El kart esta posicionado en el centro de la pista con respecto al ancho de la misma.\n\n- El kart esta utilizando el ancho disponible de la pista de manera adecuada, ya que no se observa que este pegado a los kerbs.\n\n- La trayectoria en esta seccion parece correcta, ya que el kart parece ir por el centro de la pista en direccion a la curva."
+  }
+}
