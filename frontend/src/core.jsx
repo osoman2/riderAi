@@ -256,7 +256,7 @@ export function Nav({ state, setState }) {
               style={{
                 width: 34, height: 24, borderRadius: 4,
                 border: `1px solid ${sport === s.id ? s.color : '#222'}`,
-                background: sport === s.id ? s.color + '22' : 'transparent',
+                background: sport === s.id ? s.colorHex + '22' : 'transparent',
                 color: sport === s.id ? s.color : '#555',
                 fontFamily: 'Space Mono, monospace', fontSize: 9,
                 cursor: 'pointer', transition: 'all 0.2s',
@@ -268,17 +268,26 @@ export function Nav({ state, setState }) {
         </div>
 
         {/* Lang */}
-        <button
-          onClick={() => setState(s => ({ ...s, lang: s.lang === 'en' ? 'es' : 'en' }))}
-          style={{
-            background: 'none', border: '1px solid #222', borderRadius: 4,
-            padding: '3px 9px', cursor: 'pointer',
-            fontFamily: 'Space Mono, monospace', fontSize: 10,
-            color: '#6b6b6b', letterSpacing: '0.08em',
-            transition: 'all 0.2s',
-          }}>
-          {lang.toUpperCase()}
-        </button>
+        <div style={{ display: 'flex', gap: 2 }}>
+          {['ES', 'EN'].map(l => {
+            const active = lang === l.toLowerCase();
+            return (
+              <button key={l}
+                onClick={() => setState(s => ({ ...s, lang: l.toLowerCase() }))}
+                style={{
+                  padding: '3px 9px', borderRadius: 4, cursor: 'pointer',
+                  border: `1px solid ${active ? sc.colorHex : '#333'}`,
+                  background: 'none',
+                  color: active ? sc.colorHex : '#444',
+                  fontFamily: 'Space Mono, monospace', fontSize: 10,
+                  letterSpacing: '0.08em', transition: 'border-color 0.2s, color 0.2s',
+                  appearance: 'none', WebkitAppearance: 'none',
+                }}>
+                {l}
+              </button>
+            );
+          })}
+        </div>
 
         {/* Demo toggle */}
         <button

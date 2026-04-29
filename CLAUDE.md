@@ -17,9 +17,12 @@ Incremental VRL project.
 - `backend/main.py` — FastAPI app
 - `frontend/src/main.jsx` — App root + health check
 - `frontend/src/pages.jsx` — Overview, Analyze, Sessions, Method
+- `frontend/src/karting.jsx` — Karting demo page (FPV + action cam)
 - `frontend/src/review.jsx` — Session review with real videos + data
 - `frontend/src/core.jsx` — SPORTS config, Nav, shared UI
-- `streamlit/src/services/pipeline.py` — Core analysis pipeline
+- `frontend/public/karting-demo/` — Demo videos + summary JSONs
+- `karting/demo/pipeline.py` — Karting CV pipeline (SAM2 + YOLO + VLM)
+- `streamlit/src/services/pipeline.py` — Downhill analysis pipeline
 
 ## Stack and Architecture
 - Backend: FastAPI + Uvicorn, imports pipeline from `streamlit/src/`
@@ -79,5 +82,11 @@ streamlit run app/streamlit_app.py
 - Colors: oklch-based, sober (amber DH / blue KT / teal SF) — no neon.
 - Do not import Streamlit in the backend; only import from `streamlit/src/`.
 
+## Working Directory Rule
+**Always edit files in their actual project paths** — never in `.claude/worktrees/`.
+- Frontend edits → `D:\Osman\Trabajo\Personal\DriverCoach\frontend\src\`
+- Pipeline edits → `D:\Osman\Trabajo\Personal\DriverCoach\karting\demo\pipeline.py`
+- Do NOT create git worktrees for edits. Edit main working tree directly.
+
 ## Current Priority
-Review page wired and functional. Next: validate real session end-to-end, then consider karting engine.
+Karting demo live for Saturday pitch. FPV + action cam sessions working end-to-end.

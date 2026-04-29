@@ -2,6 +2,184 @@ import React, { useState, useEffect, useRef } from 'react';
 import { SPORTS, tl, StatusPill, CapChip, ScoreRing, MiniChart } from './core.jsx';
 import { getSession, videoUrl } from './api.js';
 
+// ── DH Telemetry timeline ─────────────────────────────────────────────────────
+
+const POSTURE_COLOR = { attack: '#22d3ee', neutral: '#a3a3a3', defensive: '#f59e0b', unknown: '#333' };
+const TERRAIN_COLOR = { flat: '#22c55e', jump: '#f59e0b', bermed: '#818cf8', rock: '#ef4444', unknown: '#333' };
+
+function useCanvasDH(features, renderFn) {
+  const ref = useRef(null);
+  const draw = () => {
+    const canvas = ref.current;
+    if (!canvas || !features?.length) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.offsetWidth;
+    const h = canvas.offsetHeight;
+    if (!w || !h) return;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    renderFn(ctx, w, h, features);
+  };
+  useEffect(() => {
+    draw();
+    const ro = new ResizeObserver(draw);
+    if (ref.current) ro.observe(ref.current);
+    return () => ro.disconnect();
+  }, [features]);
+  return ref;
+}
+
+function DHLineChart({ features, field, color, label, normalize, lang }) {
+  const vals = features.map(f => f[field]).filter(v => v != null);
+  const vmin = normalize ? 0 : 0;
+  const vmax = normalize ? Math.max(...vals, 1) : 100;
+
+  const ref = useCanvasDH(features, (ctx, W, H) => {
+    ctx.clearRect(0, 0, W, H);
+    const n = features.length;
+    const colW = W / n;
+
+    // Filled area
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, color + '44');
+    grad.addColorStop(1, color + '06');
+    ctx.beginPath();
+    ctx.moveTo(0, H);
+    let hasData = false;
+    features.forEach((f, i) => {
+      const v = f[field];
+      if (v == null) return;
+      const x = i * colW + colW / 2;
+      const y = H - ((v - vmin) / (vmax - vmin)) * H * 0.9 - H * 0.05;
+      if (!hasData) { ctx.lineTo(x, y); hasData = true; }
+      else ctx.lineTo(x, y);
+    });
+    ctx.lineTo(W, H);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Line
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    hasData = false;
+    features.forEach((f, i) => {
+      const v = f[field];
+      if (v == null) return;
+      const x = i * colW + colW / 2;
+      const y = H - ((v - vmin) / (vmax - vmin)) * H * 0.9 - H * 0.05;
+      if (!hasData) { ctx.moveTo(x, y); hasData = true; }
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  });
+
+  const avg = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+  const maxV = vals.length ? Math.round(Math.max(...vals)) : null;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+        <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 8, color: '#555', letterSpacing: '0.08em' }}>{label}</span>
+        <div style={{ display: 'flex', gap: 12 }}>
+          {avg != null && (
+            <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 8, color: '#444' }}>
+              avg <span style={{ color }}>{avg}</span>
+            </span>
+          )}
+          {maxV != null && (
+            <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 8, color: '#444' }}>
+              max <span style={{ color }}>{maxV}</span>
+            </span>
+          )}
+        </div>
+      </div>
+      <canvas ref={ref} style={{ width: '100%', height: 36, display: 'block', borderRadius: 3, background: '#0a0a0a' }} />
+    </div>
+  );
+}
+
+function DHPostureTimeline({ features, lang }) {
+  const ref = useCanvasDH(features, (ctx, W, H) => {
+    ctx.clearRect(0, 0, W, H);
+    const n = features.length;
+    const colW = W / n;
+    features.forEach((f, i) => {
+      const c = POSTURE_COLOR[f.posture_label] || POSTURE_COLOR.unknown;
+      ctx.fillStyle = c + (f.posture_label ? 'cc' : '33');
+      ctx.fillRect(Math.floor(i * colW), 0, Math.ceil(colW) + 1, H);
+    });
+  });
+
+  const counts = {};
+  features.forEach(f => { if (f.posture_label) counts[f.posture_label] = (counts[f.posture_label] || 0) + 1; });
+  const total = features.length || 1;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+        <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 8, color: '#555', letterSpacing: '0.08em' }}>POSTURA</span>
+        <div style={{ display: 'flex', gap: 10 }}>
+          {Object.entries(counts).sort((a,b) => b[1]-a[1]).map(([label, cnt]) => (
+            <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+              <span style={{ width: 6, height: 6, borderRadius: 1, background: POSTURE_COLOR[label], display: 'inline-block' }} />
+              <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 7, color: '#555' }}>
+                {label} {Math.round(cnt / total * 100)}%
+              </span>
+            </span>
+          ))}
+        </div>
+      </div>
+      <canvas ref={ref} style={{ width: '100%', height: 14, display: 'block', borderRadius: 3 }} />
+    </div>
+  );
+}
+
+function DHTimeline({ features, lang, color }) {
+  if (!features?.length) return null;
+  const hasBalance  = features.some(f => f.balance_score != null);
+  const hasLine     = features.some(f => f.line_efficiency_score != null);
+  const hasSpeed    = features.some(f => f.speed_proxy != null);
+  const hasPosture  = features.some(f => f.posture_label != null);
+  if (!hasBalance && !hasLine && !hasSpeed) return null;
+
+  return (
+    <div style={{ border: '1px solid #1e1e1e', borderRadius: 8, background: '#0a0a0a', overflow: 'hidden' }}>
+      <div style={{
+        padding: '8px 14px', borderBottom: '1px solid #161616',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      }}>
+        <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#444', letterSpacing: '0.1em' }}>
+          {lang === 'es' ? 'TELEMETRÍA · TIMELINE' : 'TELEMETRY · TIMELINE'}
+        </span>
+        <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 8, color: '#2a2a2a' }}>
+          {features.length} {lang === 'es' ? 'puntos' : 'pts'}
+        </span>
+      </div>
+      <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {hasBalance && (
+          <DHLineChart features={features} field="balance_score" color="#f59e0b"
+            label={lang === 'es' ? 'BALANCE / POSTURA (0-100)' : 'BALANCE / POSTURE (0-100)'} lang={lang} />
+        )}
+        {hasLine && (
+          <DHLineChart features={features} field="line_efficiency_score" color={color}
+            label={lang === 'es' ? 'EFICIENCIA DE LÍNEA (0-100)' : 'LINE EFFICIENCY (0-100)'} lang={lang} />
+        )}
+        {hasSpeed && (
+          <DHLineChart features={features} field="speed_proxy" color="#22d3ee"
+            label={lang === 'es' ? 'VELOCIDAD PROXY' : 'SPEED PROXY'} normalize lang={lang} />
+        )}
+        {hasPosture && (
+          <DHPostureTimeline features={features} lang={lang} />
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Demo data fallback ────────────────────────────────────────────────────────
 
 const DEMO_REVIEW = {
@@ -497,6 +675,11 @@ export function SessionReviewPage({ state, setState }) {
                 </div>
                 <MiniChart data={trend} color={asc.color} gradId={activeSport} height={54} />
               </div>
+            )}
+
+            {/* DH Telemetry timeline charts */}
+            {activeSport === 'downhill' && hasRealData && sessionData?.features?.length > 0 && (
+              <DHTimeline features={sessionData.features} lang={lang} color={asc.color} />
             )}
 
             {/* Frame events (downhill) */}

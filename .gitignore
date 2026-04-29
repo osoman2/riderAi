@@ -70,3 +70,11 @@ Microproyect_guidelines/
 
 # Secrets
 secrets.toml
+
+# Video assets (raw footage and generated annotated videos — too large for git)
+karting/assets/
+karting/outputs/
+frontend/public/karting-demo/*.mp4
+
+# Claude Code worktree workspace
+.claude/

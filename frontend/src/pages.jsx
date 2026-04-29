@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { SPORTS, READINESS, tl, StatusPill, CapChip, ScoreRing, MiniChart } from './core.jsx';
-import { analyzeSession, listSessions } from './api.js';
+import { analyzeSession, listSessions, deleteSession, checkHealth } from './api.js';
 
 // ── Hero Canvas animation ─────────────────────────────────────────────────────
 
@@ -317,6 +317,150 @@ export function OverviewPage({ state, setState }) {
 
 // ── Analyze ───────────────────────────────────────────────────────────────────
 
+// ── Camera modes per sport ────────────────────────────────────────────────────
+// Each entry: { id, label, icon, desc, outputs[], available, comingSoon?, color }
+const CAMERA_MODES = {
+  downhill: [
+    {
+      id: 'drone_follow',
+      label: { en: 'FPV / Follow Drone', es: 'Drone FPV / Seguimiento' },
+      icon: '🚁',
+      desc: {
+        en: 'Drone follows rider from above or behind. Full body visible — enables pose estimation, terrain segmentation, and line consistency scoring.',
+        es: 'Drone sigue al rider desde arriba o atrás. Cuerpo completo visible — habilita estimación de pose, segmentación de terreno y scoring de línea.',
+      },
+      outputs: ['POSE EST.', 'LINE', 'TERRAIN SEG.'],
+      available: true,
+      color: '#f59e0b',
+    },
+    {
+      id: 'helmet_cam',
+      label: { en: 'Helmet / Body Cam', es: 'Cámara de Casco / Cuerpo' },
+      icon: '⛑️',
+      desc: {
+        en: 'First-person view from helmet or chest mount. Terrain segmentation and upcoming line preview. Limited pose data (upper body only).',
+        es: 'Vista en primera persona desde casco o pecho. Segmentación de terreno y previsualización de línea. Datos de pose limitados (parte superior).',
+      },
+      outputs: ['TERRAIN SEG.', 'LINE PREVIEW'],
+      available: false,
+      comingSoon: true,
+      color: '#f59e0b',
+    },
+    {
+      id: 'static_tripod',
+      label: { en: 'Static Cam / Tripod', es: 'Cámara Fija / Trípode' },
+      icon: '🎥',
+      desc: {
+        en: 'Fixed camera covering a specific corner or section. Optimal for full-body pose analysis and split timing. Limited terrain coverage.',
+        es: 'Cámara fija en un sector o curva específica. Óptima para análisis de pose de cuerpo completo y tiempos parciales. Cobertura de terreno limitada.',
+      },
+      outputs: ['POSE EST.', 'SPLIT TIMING'],
+      available: false,
+      comingSoon: true,
+      color: '#f59e0b',
+    },
+  ],
+  karting: [
+    {
+      id: 'fpv_follow',
+      label: { en: 'FPV / Follow Drone', es: 'Drone FPV / Seguimiento' },
+      icon: '🚁',
+      desc: {
+        en: 'Drone follows kart from above or behind. Detects all karts, segments track with SAM3 text-prompt, measures lateral position and line consistency.',
+        es: 'Drone sigue al kart desde arriba o atrás. Detecta todos los karts, segmenta la pista con SAM3, mide posición lateral y consistencia de línea.',
+      },
+      outputs: ['LAT POS', 'CONSIST.', 'EDGE USE', 'SAM3 overlay'],
+      available: true,
+      color: '#1fa84a',
+    },
+    {
+      id: 'action_cam',
+      label: { en: 'GoPro / Action Cam', es: 'GoPro / Cámara de Acción' },
+      icon: '📷',
+      desc: {
+        en: 'Helmet or kart-mounted first-person camera. Measures gap to kart ahead, detects kerb contact left/right, tracks all visible karts via ByteTrack.',
+        es: 'Cámara en primera persona en casco o kart. Mide brecha al kart adelante, detecta contacto con kerb izq/der, trackea karts visibles con ByteTrack.',
+      },
+      outputs: ['GAP BAR', 'KERB L/R', 'ByteTrack IDs'],
+      available: true,
+      color: '#22d3ee',
+    },
+    {
+      id: 'overhead_drone',
+      label: { en: 'Overhead / Cenital Drone', es: 'Drone Cenital / Overhead' },
+      icon: '🛸',
+      desc: {
+        en: 'Top-down drone view of the full circuit or sector. Full lap trajectory, overtaking patterns, sector comparison between laps.',
+        es: 'Vista cenital del circuito completo o sector. Trayectoria de vuelta completa, patrones de adelantamiento, comparación de sectores entre vueltas.',
+      },
+      outputs: ['FULL LAP', 'OVERTAKE ZONES', 'SECTOR CMP'],
+      available: false,
+      comingSoon: true,
+      color: '#8b5cf6',
+    },
+  ],
+  surf: [
+    {
+      id: 'beach_static',
+      label: { en: 'Static Beach / Cliff Cam', es: 'Cámara de Playa / Acantilado' },
+      icon: '🎥',
+      desc: {
+        en: 'Fixed camera on beach or cliff. Full wave view with rider trajectory — optimal for maneuver detection, wave phase tagging, and timing.',
+        es: 'Cámara fija en playa o acantilado. Vista completa de la ola con trayectoria del rider — óptima para detección de maniobras y fase de ola.',
+      },
+      outputs: ['WAVE PHASE', 'TRAJECTORY', 'MANEUVERS'],
+      available: false,
+      comingSoon: true,
+      color: '#14b8a6',
+    },
+    {
+      id: 'aerial_drone',
+      label: { en: 'Aerial Follow Drone', es: 'Drone Aéreo de Seguimiento' },
+      icon: '🚁',
+      desc: {
+        en: 'Drone follows surfer from above. Best coverage for wave selection, paddling efficiency, peak positioning, and reading sets.',
+        es: 'Drone sigue al surfer desde arriba. Mejor cobertura para selección de ola, eficiencia de palada y posicionamiento en el pico.',
+      },
+      outputs: ['WAVE SELECT', 'PADDLE EFF.', 'POSITIONING'],
+      available: false,
+      comingSoon: true,
+      color: '#14b8a6',
+    },
+    {
+      id: 'water_cam',
+      label: { en: 'Water / GoPro (Board)', es: 'Cámara en el Agua / GoPro' },
+      icon: '🤿',
+      desc: {
+        en: 'Camera mounted on board or in the water. Close-up view for stance analysis, tube riding detection. Limited wave context.',
+        es: 'Cámara montada en la tabla o en el agua. Vista de cerca para análisis de postura, detección de tubo. Contexto de ola limitado.',
+      },
+      outputs: ['STANCE', 'TUBE TIME'],
+      available: false,
+      comingSoon: true,
+      color: '#14b8a6',
+    },
+  ],
+};
+
+// Default SAM3/SAM2 segmentation prompts per sport + camera
+const DEFAULT_PROMPTS = {
+  downhill: {
+    drone_follow: 'mountain bike dirt trail path downhill terrain surface',
+    helmet_cam:   'mountain bike dirt trail path slope terrain ahead',
+    static_tripod:'mountain bike trail dirt path terrain',
+  },
+  karting: {
+    fpv_follow:     'asphalt racing circuit karting track road surface',
+    action_cam:     'asphalt road karting track surface ahead',
+    overhead_drone: 'asphalt karting circuit track surface top view',
+  },
+  surf: {
+    beach_static: 'ocean wave surf break water surface',
+    aerial_drone: 'ocean wave surf water surface aerial',
+    water_cam:    'ocean wave surfboard water close',
+  },
+};
+
 export function AnalyzePage({ state, setState }) {
   const { sport, lang, demo, backendOnline } = state;
   const [step, setStep] = useState('upload');
@@ -324,9 +468,43 @@ export function AnalyzePage({ state, setState }) {
   const [tick, setTick] = useState(0);
   const [uploadedFile, setUploadedFile] = useState(null);
   const [error, setError] = useState('');
+  const [cameraMode, setCameraMode] = useState(() => {
+    // Default to first available camera for each sport
+    const modes = CAMERA_MODES[sport] || [];
+    const first = modes.find(m => m.available) || modes[0];
+    return first ? first.id : 'fpv_follow';
+  });
+  const [showPromptConfig, setShowPromptConfig] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState('');
+  // Local flag: set synchronously when we confirm backend is live for THIS run.
+  // Avoids relying on the async global backendOnline state during processing render.
+  const [isRealRun, setIsRealRun] = useState(false);
   const sc = SPORTS[sport];
 
-  useEffect(() => { setStep('upload'); setUploadedFile(null); setError(''); }, [sport]);
+  // Derive kartingMode from cameraMode (backwards-compat for karting nav)
+  const kartingMode = sport === 'karting' ? cameraMode : 'fpv_follow';
+
+  // Default prompt = sport + camera combo default
+  const defaultPrompt = (DEFAULT_PROMPTS[sport] || {})[cameraMode] || '';
+  const activePrompt = customPrompt || defaultPrompt;
+
+  // Reset on sport change — pick first available camera, clear prompt overrides
+  useEffect(() => {
+    const modes = CAMERA_MODES[sport] || [];
+    const first = modes.find(m => m.available) || modes[0];
+    setCameraMode(first ? first.id : 'fpv_follow');
+    setCustomPrompt('');
+    setShowPromptConfig(false);
+    setStep('upload');
+    setUploadedFile(null);
+    setError('');
+    setIsRealRun(false);
+  }, [sport]);
+
+  // Update default prompt display when camera changes
+  useEffect(() => {
+    setCustomPrompt(''); // clear override so new default shows
+  }, [cameraMode]);
 
   useEffect(() => {
     if (step !== 'processing') return;
@@ -336,19 +514,52 @@ export function AnalyzePage({ state, setState }) {
 
   async function runAnalysis(file) {
     setError('');
+    setIsRealRun(false);
     setStep('processing');
     setTick(0);
 
-    if (demo || !backendOnline) {
-      // Demo: simulate processing
-      setTimeout(() => setStep('done'), 1800);
+    // Re-check backend status right now (avoids race with 30s poll interval)
+    const freshCheck = await checkHealth();
+    const isOnline = freshCheck && freshCheck.status === 'ok';
+    if (isOnline) {
+      setIsRealRun(true);   // set synchronously before any await below
+      if (!backendOnline) setState(s => ({ ...s, backendOnline: true, demo: false }));
+    }
+
+    if (!isOnline) {
+      if (sport === 'karting') {
+        // Navigate to the matching karting demo
+        setTimeout(() => setState(s => ({
+          ...s,
+          page: 'karting-demo',
+          kartingMode,
+          kartingSessionId: null,
+          kartingVideo: kartingMode === 'action_cam' ? 'gopro' : 'luciano',
+        })), 1800);
+      } else {
+        setTimeout(() => setStep('done'), 1800);
+      }
       return;
     }
 
     try {
-      const result = await analyzeSession(file, sport);
-      setState(s => ({ ...s, reviewSessionId: result.session_id }));
-      setStep('done');
+      const result = await analyzeSession(file, sport, {
+        mode: sport === 'karting' ? kartingMode : undefined,
+        prompt: activePrompt || undefined,
+      });
+      if (sport === 'karting') {
+        // Navigate to karting review page with real session data
+        setState(s => ({
+          ...s,
+          page: 'karting-demo',
+          kartingMode,
+          kartingSessionId: result.session_id,
+          kartingVideo: null, // real session, not static demo file
+        }));
+      } else {
+        setState(s => ({ ...s, reviewSessionId: result.session_id }));
+        setStep('done');
+      }
     } catch (err) {
       setError(err.message || 'Analysis failed');
       setStep('upload');
@@ -451,6 +662,152 @@ export function AnalyzePage({ state, setState }) {
         {/* Upload */}
         {step === 'upload' && (
           <div>
+
+            {/* ── Camera type selector (all sports) ── */}
+            {(() => {
+              const modes = CAMERA_MODES[sport] || [];
+              if (!modes.length) return null;
+              return (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#555', letterSpacing: '0.1em', marginBottom: 10 }}>
+                    {lang === 'es' ? 'TIPO DE CÁMARA' : 'CAMERA TYPE'}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: modes.length === 2 ? '1fr 1fr' : 'repeat(3,1fr)', gap: 10 }}>
+                    {modes.map(m => {
+                      const active = cameraMode === m.id;
+                      const locked = !m.available;
+                      return (
+                        <div key={m.id}
+                          onClick={() => { if (!locked) setCameraMode(m.id); }}
+                          style={{
+                            border: `1px solid ${active ? m.color + '80' : locked ? '#1a1a1a' : '#222'}`,
+                            borderRadius: 8, padding: '14px 16px',
+                            background: active ? m.color + '10' : locked ? '#0c0c0c' : '#111',
+                            cursor: locked ? 'default' : 'pointer',
+                            transition: 'all 0.2s', position: 'relative', opacity: locked ? 0.55 : 1,
+                          }}>
+                          {/* Coming soon badge */}
+                          {m.comingSoon && (
+                            <div style={{
+                              position: 'absolute', top: 8, right: 8,
+                              fontFamily: 'Space Mono, monospace', fontSize: 7,
+                              color: '#555', background: '#161616',
+                              border: '1px solid #2a2a2a', borderRadius: 3,
+                              padding: '1px 5px', letterSpacing: '0.06em',
+                            }}>
+                              {lang === 'es' ? 'PRÓXIMO' : 'SOON'}
+                            </div>
+                          )}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                            <span style={{ fontSize: 17 }}>{m.icon}</span>
+                            <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 13, fontWeight: 600, color: active ? m.color : locked ? '#444' : '#bbb' }}>
+                              {tl(m.label, lang)}
+                            </span>
+                            {active && !locked && (
+                              <span style={{
+                                marginLeft: 'auto', fontFamily: 'Space Mono, monospace', fontSize: 7,
+                                color: m.color, background: m.color + '18', border: `1px solid ${m.color}40`,
+                                borderRadius: 3, padding: '1px 6px', letterSpacing: '0.06em',
+                              }}>
+                                {lang === 'es' ? 'ACTIVO' : 'ACTIVE'}
+                              </span>
+                            )}
+                          </div>
+                          <p style={{ margin: '0 0 10px', fontFamily: 'Space Grotesk, sans-serif', fontSize: 11, color: active ? '#aaa' : '#555', lineHeight: 1.5 }}>
+                            {tl(m.desc, lang)}
+                          </p>
+                          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                            {m.outputs.map(o => (
+                              <span key={o} style={{
+                                fontFamily: 'Space Mono, monospace', fontSize: 8,
+                                color: active ? m.color : '#444',
+                                background: active ? m.color + '12' : '#141414',
+                                border: `1px solid ${active ? m.color + '30' : '#222'}`,
+                                borderRadius: 3, padding: '2px 7px',
+                              }}>{o}</span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ── Segmentation prompt config (collapsible) ── */}
+            <div style={{ marginBottom: 20 }}>
+              <button
+                onClick={() => setShowPromptConfig(v => !v)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                  background: showPromptConfig ? '#0f0f0f' : 'none',
+                  border: `1px solid ${showPromptConfig ? '#2a2a2a' : '#252525'}`,
+                  borderRadius: showPromptConfig ? '6px 6px 0 0' : 6,
+                  padding: '10px 14px', cursor: 'pointer', transition: 'all 0.2s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = '#444'; e.currentTarget.style.background = '#0f0f0f'; }}
+                onMouseLeave={e => { if (!showPromptConfig) { e.currentTarget.style.borderColor = '#252525'; e.currentTarget.style.background = 'none'; } }}>
+                <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, letterSpacing: '0.1em', flex: 1, textAlign: 'left', color: customPrompt ? sc.color : '#6b6b6b' }}>
+                  SAM3 · {lang === 'es' ? 'PROMPT DE SEGMENTACIÓN' : 'SEGMENTATION PROMPT'}
+                  {customPrompt && <span style={{ marginLeft: 8 }}>● {lang === 'es' ? 'PERSONALIZADO' : 'CUSTOM'}</span>}
+                  {!customPrompt && <span style={{ color: '#3a3a3a', marginLeft: 8, fontWeight: 400 }}>{defaultPrompt}</span>}
+                </span>
+                <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#444' }}>
+                  {showPromptConfig ? '▲' : '▼'}
+                </span>
+              </button>
+
+              {showPromptConfig && (
+                <div style={{
+                  border: '1px solid #1e1e1e', borderTop: 'none',
+                  borderRadius: '0 0 6px 6px', padding: '14px',
+                  background: '#0d0d0d',
+                }}>
+                  <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 12, color: '#555', marginBottom: 10, lineHeight: 1.5 }}>
+                    {lang === 'es'
+                      ? 'Texto que guía al modelo de segmentación (SAM3) para identificar la superficie de interés. Edita si el default no funciona para tu grabación.'
+                      : 'Text guiding the segmentation model (SAM3) to identify the surface of interest. Edit if the default doesn\'t work for your footage.'}
+                  </div>
+                  <textarea
+                    value={customPrompt || defaultPrompt}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setCustomPrompt(val === defaultPrompt ? '' : val);
+                    }}
+                    rows={2}
+                    style={{
+                      width: '100%', boxSizing: 'border-box',
+                      background: '#111', border: `1px solid ${customPrompt ? sc.color + '50' : '#2a2a2a'}`,
+                      borderRadius: 5, padding: '9px 12px', resize: 'vertical',
+                      fontFamily: 'Space Mono, monospace', fontSize: 11,
+                      color: '#EDEDE8', lineHeight: 1.5, outline: 'none',
+                      transition: 'border-color 0.2s',
+                    }}
+                    onFocus={e => { if (!customPrompt) e.target.select(); }}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                    <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#444' }}>
+                      {lang === 'es' ? 'DEFAULT:' : 'DEFAULT:'} <span style={{ color: '#555' }}>{defaultPrompt}</span>
+                    </div>
+                    {customPrompt && (
+                      <button
+                        onClick={() => setCustomPrompt('')}
+                        style={{
+                          background: 'none', border: '1px solid #2a2a2a', borderRadius: 4,
+                          padding: '3px 10px', cursor: 'pointer',
+                          fontFamily: 'Space Mono, monospace', fontSize: 8, color: '#555',
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.color = '#888'}
+                        onMouseLeave={e => e.currentTarget.style.color = '#555'}>
+                        {lang === 'es' ? 'RESTAURAR DEFAULT' : 'RESET TO DEFAULT'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div
               onDragOver={e => { e.preventDefault(); setDrag(true); }}
               onDragLeave={() => setDrag(false)}
@@ -479,23 +836,40 @@ export function AnalyzePage({ state, setState }) {
               </div>
             </div>
 
-            {(demo || !backendOnline) && (
-              <button onClick={() => runAnalysis(null)} style={{
-                width: '100%', padding: '11px 0', marginBottom: 20,
-                border: '1px solid #eab30845', borderRadius: 8,
-                background: '#eab30810', color: '#eab308',
-                fontFamily: 'Space Mono, monospace', fontSize: 10, cursor: 'pointer',
-                letterSpacing: '0.08em', transition: 'background 0.2s',
-              }}>
-                ● {lang === 'es' ? 'EJECUTAR EN MODO DEMO' : 'RUN IN DEMO MODE'}
-              </button>
-            )}
-
+            {/* Offline notice — only when backend is actually down */}
             {!backendOnline && (
-              <div style={{ padding: '10px 14px', border: '1px solid #eab30828', borderRadius: 6, background: '#eab30808', marginBottom: 12 }}>
-                <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#eab308' }}>
-                  {lang === 'es' ? '● MODO DEMO — backend no disponible' : '● DEMO MODE — backend unavailable'}
-                </span>
+              <div style={{
+                border: '1px solid #ef444430', borderRadius: 8,
+                background: '#ef444408', marginBottom: 16, overflow: 'hidden',
+              }}>
+                <div style={{
+                  padding: '10px 16px', background: '#ef444412',
+                  borderBottom: '1px solid #ef444420',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                }}>
+                  <span style={{ color: '#ef6444', fontSize: 14 }}>⚠</span>
+                  <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#ef6464', letterSpacing: '0.08em' }}>
+                    {lang === 'es' ? 'BACKEND OFFLINE — EL VIDEO NO SERÁ PROCESADO' : 'BACKEND OFFLINE — VIDEO WILL NOT BE PROCESSED'}
+                  </span>
+                </div>
+                <div style={{ padding: '12px 16px', fontFamily: 'Space Grotesk, sans-serif', fontSize: 13, color: '#888', lineHeight: 1.6 }}>
+                  {lang === 'es'
+                    ? 'El servidor de análisis no está disponible. Si cargas un video, se mostrará una sesión de demo pre-grabada, no los resultados reales de tu video. Para procesar un video real, inicia el backend con '
+                    : 'The analysis server is not running. If you upload a video, a pre-recorded demo session will be shown — not your real video results. To process a real video, start the backend with '}
+                  <code style={{ fontFamily: 'Space Mono, monospace', fontSize: 11, color: '#22c55e', background: '#22c55e10', borderRadius: 3, padding: '1px 6px' }}>
+                    uvicorn backend.main:app --port 8000
+                  </code>
+                </div>
+                <div style={{ padding: '0 16px 12px', display: 'flex', gap: 8 }}>
+                  <button onClick={() => runAnalysis(null)} style={{
+                    padding: '8px 18px', borderRadius: 6,
+                    border: '1px solid #eab30845', background: '#eab30810', color: '#eab308',
+                    fontFamily: 'Space Mono, monospace', fontSize: 10, cursor: 'pointer',
+                    letterSpacing: '0.08em',
+                  }}>
+                    ● {lang === 'es' ? 'VER DEMO DE TODAS FORMAS' : 'SHOW DEMO ANYWAY'}
+                  </button>
+                </div>
               </div>
             )}
 
@@ -526,10 +900,27 @@ export function AnalyzePage({ state, setState }) {
             <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 11, color: sc.color, letterSpacing: '0.1em', marginBottom: 8 }}>
               {procLabel ? procLabel.toUpperCase() : ''}
             </div>
-            <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 13, color: '#6b6b6b', marginBottom: 6 }}>
-              {lang === 'es' ? 'Ejecutando adaptador de sport...' : 'Running sport adapter...'}
-            </div>
-            {backendOnline && !demo && (
+            {/* isSimulation: no real file OR backend confirmed offline when this run started */}
+            {(() => {
+              const isSimulation = !isRealRun || !uploadedFile;
+              return (<>
+                <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 13, color: '#6b6b6b', marginBottom: 6 }}>
+                  {isSimulation
+                    ? (lang === 'es' ? 'Cargando datos de demo...' : 'Loading demo data...')
+                    : (lang === 'es' ? 'Ejecutando pipeline de análisis...' : 'Running analysis pipeline...')}
+                </div>
+                {isSimulation && (
+                  <div style={{
+                    marginTop: 12, padding: '8px 16px',
+                    border: '1px solid #eab30830', borderRadius: 6, background: '#eab30808',
+                    fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#eab308',
+                  }}>
+                    {lang === 'es' ? '⚠ SIMULACIÓN — tu video original no fue procesado' : '⚠ SIMULATION — your video was not processed'}
+                  </div>
+                )}
+              </>);
+            })()}
+            {isRealRun && (
               <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#555', marginTop: 8 }}>
                 {lang === 'es' ? '~1-3 min dependiendo del video' : '~1-3 min depending on video length'}
               </div>
@@ -597,58 +988,106 @@ function formatDate(session_id) {
   return session_id;
 }
 
-function SessionRow({ sess, lang, onClick }) {
+function SessionRow({ sess, lang, onClick, onDelete }) {
   const sc = SPORTS[sess.sport] || SPORTS.downhill;
   const [hov, setHov] = useState(false);
+  const [delHov, setDelHov] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const isReal = !sess._kartingDemo && !sess.session_id?.startsWith('demo');
 
   const scores = [];
   if (sess.avg_balance_score != null) scores.push({ k: lang === 'es' ? 'pos' : 'pos', v: Math.round(sess.avg_balance_score) });
   if (sess.avg_line_efficiency_score != null) scores.push({ k: 'line', v: Math.round(sess.avg_line_efficiency_score) });
 
+  function handleDelete(e) {
+    e.stopPropagation();
+    if (!confirming) { setConfirming(true); return; }
+    setDeleting(true);
+    deleteSession(sess.session_id)
+      .then(() => onDelete(sess.session_id))
+      .catch(() => { setDeleting(false); setConfirming(false); });
+  }
+
+  function cancelDelete(e) {
+    e.stopPropagation();
+    setConfirming(false);
+  }
+
   return (
-    <div onClick={onClick}
+    <div
       onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
+      onMouseLeave={() => { setHov(false); setConfirming(false); }}
       style={{
         display: 'flex', alignItems: 'center', gap: 14,
         padding: '14px 18px', borderRadius: 8,
-        border: `1px solid ${hov ? sc.color + '50' : '#222'}`,
-        background: hov ? sc.color + '07' : '#111111',
-        cursor: 'pointer', transition: 'all 0.2s',
+        border: `1px solid ${confirming ? '#ef444450' : hov ? sc.color + '50' : '#222'}`,
+        background: confirming ? '#ef444408' : hov ? sc.color + '07' : '#111111',
+        cursor: 'pointer', transition: 'all 0.2s', position: 'relative',
       }}>
-      <div style={{ width: 3, height: 36, borderRadius: 2, background: sc.color, flexShrink: 0, boxShadow: `0 0 8px ${sc.color}50` }} />
-      <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 11, color: sc.color, width: 22, flexShrink: 0 }}>
-        {sc.abbr}
-      </div>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 14, color: '#EDEDE8', marginBottom: 2 }}>
-          {sess.original_filename || sess.session_id}
+      {/* Clickable main area */}
+      <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 14, flex: 1, minWidth: 0 }}>
+        <div style={{ width: 3, height: 36, borderRadius: 2, background: sc.color, flexShrink: 0, boxShadow: `0 0 8px ${sc.color}50` }} />
+        <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 11, color: sc.color, width: 22, flexShrink: 0 }}>
+          {sc.abbr}
         </div>
-        <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#6b6b6b' }}>
-          {formatDate(sess.session_id)}
-        </div>
-      </div>
-      <div style={{ display: 'flex', gap: 18 }}>
-        {sess._kartingDemo ? (
-          <span style={{
-            fontFamily: 'Space Mono, monospace', fontSize: 9,
-            color: sc.color, background: sc.color + '15',
-            border: `1px solid ${sc.color}40`, borderRadius: 3, padding: '3px 8px',
-          }}>
-            DEMO ◆
-          </span>
-        ) : scores.length > 0 ? scores.map(s => (
-          <div key={s.k} style={{ textAlign: 'center' }}>
-            <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 17, color: sc.color, lineHeight: 1 }}>{s.v}</div>
-            <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 8, color: '#6b6b6b', textTransform: 'uppercase', marginTop: 2 }}>{s.k}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 14, color: '#EDEDE8', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {sess.original_filename || sess.session_id}
           </div>
-        )) : (
-          <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#3a3a3a', border: '1px solid #222', borderRadius: 3, padding: '3px 8px' }}>
-            SHELL
-          </span>
-        )}
+          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#6b6b6b' }}>
+            {formatDate(sess.session_id)}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 18, flexShrink: 0 }}>
+          {sess._kartingDemo ? (
+            <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: sc.color, background: sc.color + '15', border: `1px solid ${sc.color}40`, borderRadius: 3, padding: '3px 8px' }}>DEMO ◆</span>
+          ) : scores.length > 0 ? scores.map(s => (
+            <div key={s.k} style={{ textAlign: 'center' }}>
+              <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 17, color: sc.color, lineHeight: 1 }}>{s.v}</div>
+              <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 8, color: '#6b6b6b', textTransform: 'uppercase', marginTop: 2 }}>{s.k}</div>
+            </div>
+          )) : (
+            <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#3a3a3a', border: '1px solid #222', borderRadius: 3, padding: '3px 8px' }}>SHELL</span>
+          )}
+        </div>
+        <div style={{ color: '#3a3a3a', fontSize: 14, paddingLeft: 4, flexShrink: 0 }}>→</div>
       </div>
-      <div style={{ color: '#3a3a3a', fontSize: 14, paddingLeft: 4 }}>→</div>
+
+      {/* Delete controls — only for real sessions */}
+      {isReal && (
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0, marginLeft: 6 }}>
+          {confirming && (
+            <button onClick={cancelDelete} style={{
+              padding: '4px 10px', borderRadius: 4, border: '1px solid #333',
+              fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#6b6b6b', cursor: 'pointer',
+              background: '#0d0d0d',
+            }}>
+              {lang === 'es' ? 'cancelar' : 'cancel'}
+            </button>
+          )}
+          <button
+            onClick={handleDelete}
+            onMouseEnter={() => setDelHov(true)}
+            onMouseLeave={() => setDelHov(false)}
+            disabled={deleting}
+            title={confirming ? (lang === 'es' ? 'Confirmar eliminación' : 'Confirm delete') : (lang === 'es' ? 'Eliminar sesión' : 'Delete session')}
+            style={{
+              width: 28, height: 28, borderRadius: 5, border: `1px solid ${confirming ? '#ef4444' : delHov ? '#ef444460' : '#2a2a2a'}`,
+              background: confirming ? '#ef444418' : delHov ? '#ef444410' : 'transparent',
+              color: confirming ? '#ef4444' : delHov ? '#ef4444' : '#3a3a3a',
+              cursor: deleting ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              transition: 'all 0.15s', flexShrink: 0,
+            }}>
+            {deleting
+              ? <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 8 }}>…</span>
+              : confirming
+                ? <svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 6h8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/><path d="M2 3h8M2 9h8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" opacity="0.5"/></svg>
+                : <svg width="11" height="12" viewBox="0 0 11 12" fill="none"><path d="M1 3h9M4 3V2h3v1M2 3l.7 7.3a.7.7 0 00.7.7h4.2a.7.7 0 00.7-.7L9 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            }
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -658,6 +1097,9 @@ export function SessionsPage({ state, setState }) {
   const [filter, setFilter] = useState('all');
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  function refresh() { setRefreshKey(k => k + 1); }
 
   useEffect(() => {
     if (!backendOnline) {
@@ -675,7 +1117,12 @@ export function SessionsPage({ state, setState }) {
       })
       .catch(() => setSessions(DEMO_SESSIONS))
       .finally(() => setLoading(false));
-  }, [backendOnline]);
+  // refreshKey forces re-fetch when user navigates back or clicks refresh
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backendOnline, refreshKey]);
+
+  // Always re-fetch on mount (handles navigating back after a new session was created)
+  useEffect(() => { if (backendOnline) refresh(); }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const list = filter === 'all' ? sessions : sessions.filter(s => s.sport === filter);
 
@@ -697,7 +1144,16 @@ export function SessionsPage({ state, setState }) {
               {lang === 'es' ? 'Sesiones' : 'Sessions'}
             </h2>
           </div>
-          <div style={{ display: 'flex', gap: 5 }}>
+          <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+            {backendOnline && (
+              <button onClick={refresh} disabled={loading} title={lang === 'es' ? 'Actualizar' : 'Refresh'} style={{
+                padding: '5px 10px', borderRadius: 5, cursor: loading ? 'wait' : 'pointer',
+                border: '1px solid #222', background: 'transparent', color: loading ? '#333' : '#555',
+                fontFamily: 'Space Mono, monospace', fontSize: 11, transition: 'color 0.15s',
+              }}>
+                {loading ? '…' : '↺'}
+              </button>
+            )}
             {filters.map(f => {
               const col = f.id === 'all' ? '#EDEDE8' : SPORTS[f.id]?.color;
               const on = filter === f.id;
@@ -732,9 +1188,12 @@ export function SessionsPage({ state, setState }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
           {list.map(sess => (
             <SessionRow key={sess.session_id} sess={sess} lang={lang}
+              onDelete={id => setSessions(prev => prev.filter(s => s.session_id !== id))}
               onClick={() => {
                 if (sess._kartingDemo) {
-                  setState(s => ({ ...s, sport: 'karting', page: 'karting-demo', kartingVideo: sess._kartingVideo, kartingMode: sess._kartingMode }));
+                  setState(s => ({ ...s, sport: 'karting', page: 'karting-demo', kartingSessionId: null, kartingVideo: sess._kartingVideo, kartingMode: sess._kartingMode }));
+                } else if (sess.sport === 'karting') {
+                  setState(s => ({ ...s, sport: 'karting', page: 'karting-demo', kartingSessionId: sess.session_id, kartingVideo: null, kartingMode: sess.mode || 'fpv_follow' }));
                 } else {
                   setState(s => ({ ...s, reviewSessionId: sess.session_id, sport: sess.sport || s.sport, page: 'review' }));
                 }
@@ -753,57 +1212,366 @@ export function SessionsPage({ state, setState }) {
 
 // ── Method ────────────────────────────────────────────────────────────────────
 
+// Camera input matrix per sport
+const CAMERA_DATA = {
+  karting: {
+    sources: [
+      { id: 'fpv',      label: { en: 'FPV Drone',        es: 'Drone FPV' },        tier: 0, recommended: true  },
+      { id: 'gopro',    label: { en: 'GoPro / Helmet',   es: 'GoPro / Casco' },    tier: 0, recommended: true  },
+      { id: 'overhead', label: { en: 'Fixed Overhead',   es: 'Cámara Fija Cenital'},tier: 1, recommended: false },
+      { id: 'gps',      label: { en: 'GPS / OBD',        es: 'GPS / OBD' },        tier: 2, recommended: false },
+    ],
+    rows: [
+      { label: { en: 'Kart detection (YOLO11)', es: 'Detección de kart (YOLO11)' },          fpv: 2, gopro: 2, overhead: 2, gps: 0 },
+      { label: { en: 'Lateral position on track', es: 'Posición lateral en pista' },      fpv: 2, gopro: 1, overhead: 2, gps: 0 },
+      { label: { en: 'Track segmentation (SAM3)', es: 'Segmentación de pista (SAM3)' },   fpv: 2, gopro: 2, overhead: 2, gps: 0 },
+      { label: { en: 'Multi-kart tracking', es: 'Tracking multi-kart' },                  fpv: 2, gopro: 2, overhead: 2, gps: 0 },
+      { label: { en: 'Gap to kart ahead', es: 'Brecha al kart adelante' },                fpv: 0, gopro: 2, overhead: 2, gps: 0 },
+      { label: { en: 'Kerb contact detection', es: 'Detección de contacto kerb' },        fpv: 0, gopro: 2, overhead: 1, gps: 0 },
+      { label: { en: 'Lap timing', es: 'Tiempo por vuelta' },                             fpv: 0, gopro: 0, overhead: 2, gps: 2 },
+      { label: { en: 'Corner phase breakdown', es: 'Desglose por fase de curva' },        fpv: 0, gopro: 0, overhead: 2, gps: 1 },
+      { label: { en: 'Speed & telemetry', es: 'Velocidad y telemetría' },                 fpv: 0, gopro: 0, overhead: 0, gps: 2 },
+      { label: { en: 'AI coaching (VLM)', es: 'Coaching IA (VLM)' },                     fpv: 2, gopro: 2, overhead: 2, gps: 0 },
+    ],
+    pipelines: {
+      fpv: [
+        { step: 'YOLO11n', color: '#1fa84a', desc: { en: 'Detect karts every frame', es: 'Detecta karts cada frame' } },
+        { step: 'ByteTrack', color: '#a78bfa', desc: { en: 'Assign persistent IDs', es: 'Asigna IDs persistentes' } },
+        { step: 'SAM3 + HSV', color: '#22c55e', desc: { en: 'Text-prompt mask → HSV all frames', es: 'Máscara text-prompt → HSV todos los frames' } },
+        { step: 'Scores', color: '#1fa84a', desc: { en: 'LAT POS · CONSIST · EDGE USE', es: 'LAT POS · CONSIST · USO PISTA' } },
+        { step: 'Groq LLM', color: '#a78bfa', desc: { en: 'metrics-only summary', es: 'resumen solo métricas' } },
+      ],
+      gopro: [
+        { step: 'YOLO11n', color: '#1fa84a', desc: { en: 'Detect karts every frame', es: 'Detecta karts cada frame' } },
+        { step: 'ByteTrack', color: '#a78bfa', desc: { en: 'Track IDs + gap bbox area', es: 'IDs + área bbox para gap' } },
+        { step: 'SAM3 + HSV', color: '#22d3ee', desc: { en: 'Text-prompt road mask + L/R kerb', es: 'Máscara text-prompt + kerb izq/der' } },
+        { step: 'GAP BAR', color: '#1fa84a', desc: { en: 'Closest kart proximity', es: 'Proximidad al kart más cercano' } },
+        { step: 'Groq LLM', color: '#a78bfa', desc: { en: 'metrics-only summary', es: 'resumen solo métricas' } },
+      ],
+    },
+  },
+  downhill: {
+    sources: [
+      { id: 'trail',    label: { en: 'Trail / Helmet Cam', es: 'Cámara de Sendero / Casco' }, tier: 0, recommended: true  },
+      { id: 'drone',    label: { en: 'Follow Drone',        es: 'Drone de Seguimiento' },      tier: 1, recommended: false },
+      { id: 'checkpoint',label:{ en: 'Fixed Checkpoint',    es: 'Checkpoint Fijo' },            tier: 1, recommended: false },
+      { id: 'imu',      label: { en: 'IMU / GPS',           es: 'IMU / GPS' },                 tier: 2, recommended: false },
+    ],
+    rows: [
+      { label: { en: 'Body pose (MediaPipe)', es: 'Pose corporal (MediaPipe)' },              trail: 2, drone: 1, checkpoint: 1, imu: 0 },
+      { label: { en: 'Balance score', es: 'Score de balance' },                               trail: 2, drone: 1, checkpoint: 1, imu: 0 },
+      { label: { en: 'Terrain classification', es: 'Clasificación de terreno' },              trail: 2, drone: 2, checkpoint: 0, imu: 0 },
+      { label: { en: 'Line efficiency', es: 'Eficiencia de línea' },                          trail: 1, drone: 2, checkpoint: 0, imu: 0 },
+      { label: { en: 'Section breakdown', es: 'Desglose por sección' },                       trail: 0, drone: 1, checkpoint: 2, imu: 1 },
+      { label: { en: 'Run-over-run comparison', es: 'Comparación entre bajadas' },            trail: 1, drone: 1, checkpoint: 2, imu: 2 },
+      { label: { en: 'Speed / G-force', es: 'Velocidad / G' },                               trail: 0, drone: 0, checkpoint: 0, imu: 2 },
+      { label: { en: 'AI coaching (VLM)', es: 'Coaching IA (VLM)' },                        trail: 2, drone: 2, checkpoint: 2, imu: 0 },
+    ],
+    pipelines: {
+      trail: [
+        { step: 'MediaPipe', color: '#c97a28', desc: { en: '17 pose keypoints / frame', es: '17 puntos de pose / frame' } },
+        { step: 'HSV terrain', color: '#eab308', desc: { en: 'Classify rock / root / drop', es: 'Clasifica piedra / raíz / caída' } },
+        { step: 'Balance', color: '#c97a28', desc: { en: 'Hip/shoulder alignment score', es: 'Score de alineación cadera/hombros' } },
+        { step: 'Line', color: '#c97a28', desc: { en: 'Path efficiency vs terrain', es: 'Eficiencia de trayectoria vs terreno' } },
+        { step: 'Groq LLM', color: '#a78bfa', desc: { en: 'metrics-only summary', es: 'resumen solo métricas' } },
+      ],
+    },
+  },
+  surf: {
+    sources: [
+      { id: 'beach',  label: { en: 'Beach / Pier Cam', es: 'Cámara de Playa / Muelle' }, tier: 0, recommended: false },
+      { id: 'drone',  label: { en: 'Overhead Drone',   es: 'Drone Cenital' },             tier: 1, recommended: false },
+      { id: 'board',  label: { en: 'Board Cam',        es: 'Cámara en Tabla' },           tier: 1, recommended: false },
+      { id: 'sensors',label: { en: 'Pressure Sensors', es: 'Sensores de Presión' },       tier: 2, recommended: false },
+    ],
+    rows: [
+      { label: { en: 'Surfer detection', es: 'Detección de surfista' },          beach: 2, drone: 2, board: 0, sensors: 0 },
+      { label: { en: 'Pose / balance', es: 'Pose / balance' },                   beach: 1, drone: 2, board: 0, sensors: 0 },
+      { label: { en: 'Wave phase detection', es: 'Detección de fase de ola' },   beach: 2, drone: 2, board: 1, sensors: 0 },
+      { label: { en: 'Maneuver tagging', es: 'Etiquetado de maniobra' },         beach: 2, drone: 2, board: 0, sensors: 0 },
+      { label: { en: 'Timing / pop-up', es: 'Timing / pop-up' },                beach: 1, drone: 1, board: 2, sensors: 0 },
+      { label: { en: 'Wave quality score', es: 'Score de calidad de ola' },      beach: 1, drone: 2, board: 0, sensors: 0 },
+      { label: { en: 'Load / pressure analysis', es: 'Análisis de carga / presión' }, beach: 0, drone: 0, board: 0, sensors: 2 },
+      { label: { en: 'AI coaching (VLM)', es: 'Coaching IA (VLM)' },            beach: 2, drone: 2, board: 1, sensors: 0 },
+    ],
+    pipelines: {},
+  },
+};
+
+// Renders a horizontal pipeline flow: [step] → [step] → …
+function PipelineFlow({ steps, color }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'stretch', gap: 0, overflowX: 'auto', paddingBottom: 4 }}>
+      {steps.map((s, i) => (
+        <React.Fragment key={i}>
+          <div style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            padding: '10px 14px', minWidth: 110, maxWidth: 140,
+            background: s.color + '10',
+            border: `1px solid ${s.color}30`,
+            borderRadius: 6,
+            flexShrink: 0,
+          }}>
+            <span style={{
+              fontFamily: 'Space Mono, monospace', fontSize: 9, color: s.color,
+              letterSpacing: '0.06em', textAlign: 'center', marginBottom: 5,
+            }}>{s.step}</span>
+            <span style={{
+              fontFamily: 'Space Grotesk, sans-serif', fontSize: 11, color: '#888',
+              textAlign: 'center', lineHeight: 1.4,
+            }}>{typeof s.desc === 'object' ? (s.desc.es || s.desc.en) : s.desc}</span>
+          </div>
+          {i < steps.length - 1 && (
+            <div style={{
+              display: 'flex', alignItems: 'center', padding: '0 6px', color: '#333',
+              fontFamily: 'Space Mono, monospace', fontSize: 14, flexShrink: 0,
+            }}>→</div>
+          )}
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
+function PipelineFlowLang({ steps, lang }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'stretch', gap: 0, overflowX: 'auto', paddingBottom: 4 }}>
+      {steps.map((s, i) => (
+        <React.Fragment key={i}>
+          <div style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            padding: '10px 14px', minWidth: 110, maxWidth: 140,
+            background: s.color + '10',
+            border: `1px solid ${s.color}30`,
+            borderRadius: 6,
+            flexShrink: 0,
+          }}>
+            <span style={{
+              fontFamily: 'Space Mono, monospace', fontSize: 9, color: s.color,
+              letterSpacing: '0.06em', textAlign: 'center', marginBottom: 5,
+            }}>{s.step}</span>
+            <span style={{
+              fontFamily: 'Space Grotesk, sans-serif', fontSize: 11, color: '#888',
+              textAlign: 'center', lineHeight: 1.4,
+            }}>{tl(s.desc, lang)}</span>
+          </div>
+          {i < steps.length - 1 && (
+            <div style={{
+              display: 'flex', alignItems: 'center', padding: '0 6px', color: '#333',
+              fontFamily: 'Space Mono, monospace', fontSize: 14, flexShrink: 0,
+            }}>→</div>
+          )}
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
+// Camera source matrix + pipeline diagrams
+function CameraSection({ sport, sc, lang }) {
+  const data = CAMERA_DATA[sport];
+  if (!data) return null;
+  const { sources, rows, pipelines } = data;
+  const col = sc.colorHex;
+
+  // Value cell renderer: 0=none, 1=partial, 2=full
+  const Cell = ({ v, color }) => {
+    if (v === 2) return <span style={{ color, fontSize: 14 }}>◆</span>;
+    if (v === 1) return <span style={{ color: '#555', fontSize: 14 }} title="partial">◈</span>;
+    return <span style={{ color: '#2a2a2a', fontSize: 14 }}>—</span>;
+  };
+
+  // Determine column keys from sources
+  const colKeys = sources.map(s => s.id);
+
+  return (
+    <div style={{ marginBottom: 48 }}>
+      {/* Section label */}
+      <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#6b6b6b', letterSpacing: '0.12em', marginBottom: 16 }}>
+        {lang === 'es' ? 'FUENTE DE VIDEO — QUÉ DESBLOQUEA CADA CÁMARA' : 'VIDEO SOURCE — WHAT EACH CAMERA UNLOCKS'}
+      </div>
+
+      {/* Camera matrix table */}
+      <div style={{ border: '1px solid #222', borderRadius: 8, overflow: 'hidden', marginBottom: 24 }}>
+        {/* Header row */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: `200px repeat(${sources.length}, 1fr)`,
+          background: '#141414', borderBottom: '1px solid #222',
+        }}>
+          <div style={{ padding: '10px 16px', fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#555' }}>
+            {lang === 'es' ? 'ANÁLISIS' : 'ANALYSIS'}
+          </div>
+          {sources.map(src => (
+            <div key={src.id} style={{ padding: '10px 8px', textAlign: 'center' }}>
+              <div style={{
+                fontFamily: 'Space Mono, monospace', fontSize: 9, color: src.recommended ? col : '#555',
+                letterSpacing: '0.07em',
+              }}>{tl(src.label, lang)}</div>
+              <div style={{ marginTop: 4, display: 'flex', justifyContent: 'center', gap: 4 }}>
+                {src.recommended && (
+                  <span style={{
+                    fontFamily: 'Space Mono, monospace', fontSize: 7, color: col,
+                    background: col + '15', border: `1px solid ${col}30`,
+                    borderRadius: 3, padding: '1px 5px', letterSpacing: '0.06em',
+                  }}>{lang === 'es' ? 'RECOMENDADO' : 'RECOMMENDED'}</span>
+                )}
+                <span style={{
+                  fontFamily: 'Space Mono, monospace', fontSize: 7, color: '#444',
+                  background: '#161616', border: '1px solid #222',
+                  borderRadius: 3, padding: '1px 5px',
+                }}>TIER {src.tier}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Data rows */}
+        {rows.map((row, i) => (
+          <div key={i} style={{
+            display: 'grid',
+            gridTemplateColumns: `200px repeat(${sources.length}, 1fr)`,
+            borderBottom: i < rows.length - 1 ? '1px solid #1a1a1a' : 'none',
+            background: i % 2 ? '#0f0f0f' : 'transparent',
+            alignItems: 'center',
+          }}>
+            <div style={{ padding: '10px 16px', fontFamily: 'Space Grotesk, sans-serif', fontSize: 12, color: '#888' }}>
+              {tl(row.label, lang)}
+            </div>
+            {colKeys.map(key => (
+              <div key={key} style={{ textAlign: 'center' }}>
+                <Cell v={row[key] ?? 0} color={col} />
+              </div>
+            ))}
+          </div>
+        ))}
+
+        {/* Legend */}
+        <div style={{
+          padding: '8px 16px', background: '#0d0d0d', borderTop: '1px solid #1a1a1a',
+          display: 'flex', gap: 18, alignItems: 'center',
+        }}>
+          <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 8, color: '#333', letterSpacing: '0.08em' }}>
+            {lang === 'es' ? 'LEYENDA:' : 'LEGEND:'}
+          </span>
+          {[
+            { sym: '◆', label: { en: 'Full support', es: 'Soporte completo' }, color: col },
+            { sym: '◈', label: { en: 'Partial / reduced accuracy', es: 'Parcial / menor precisión' }, color: '#555' },
+            { sym: '—', label: { en: 'Not applicable', es: 'No aplica' }, color: '#2a2a2a' },
+          ].map((l, i) => (
+            <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ color: l.color, fontSize: 13 }}>{l.sym}</span>
+              <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 11, color: '#555' }}>{tl(l.label, lang)}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Pipeline flows per available camera */}
+      {Object.keys(pipelines).length > 0 && (
+        <div>
+          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#6b6b6b', letterSpacing: '0.12em', marginBottom: 14 }}>
+            {lang === 'es' ? 'FLUJO DEL PIPELINE — TIER 0' : 'PIPELINE FLOW — TIER 0'}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {Object.entries(pipelines).map(([camId, steps]) => {
+              const camSrc = sources.find(s => s.id === camId);
+              if (!camSrc) return null;
+              return (
+                <div key={camId} style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', borderRadius: 8, padding: '14px 16px' }}>
+                  <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#555', letterSpacing: '0.08em', marginBottom: 12 }}>
+                    {tl(camSrc.label, lang).toUpperCase()}
+                  </div>
+                  <PipelineFlowLang steps={steps} lang={lang} />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const SPORT_TIERS = {
   karting: [
     {
       tier: 0,
       status: 'live',
       statusLabel: { en: 'LIVE NOW', es: 'EN VIVO' },
-      requires: { en: 'Any video — no labelled data', es: 'Cualquier video — sin datos etiquetados' },
-      pipeline: [
-        { en: 'YOLOv8n + ByteTrack', es: 'YOLOv8n + ByteTrack' },
-        { en: 'SAM2 Image + HSV', es: 'SAM2 Image + HSV' },
-        { en: 'Groq VLM (1 call)', es: 'Groq VLM (1 llamada)' },
+      input: { en: 'Any video (FPV drone or GoPro helmet cam)', es: 'Cualquier video (drone FPV o GoPro casco)' },
+      tech: ['YOLO11n', 'ByteTrack', 'SAM3.1 + HSV', 'Groq LLM + VLM'],
+      features: [
+        { en: 'Lateral position on track (LAT POS bar)', es: 'Posición lateral en pista (barra LAT POS)' },
+        { en: 'Line consistency score per kart', es: 'Score de consistencia de línea por kart' },
+        { en: 'Track width utilization score', es: 'Score de uso del ancho de pista' },
+        { en: 'Gap to kart ahead (GAP BAR)', es: 'Gap al kart de adelante (GAP BAR)' },
+        { en: 'Kerb contact detection L/R', es: 'Detección de contacto con kerb izq/der' },
+        { en: 'SAM3 text-prompt segmentation (custom prompt supported)', es: 'Segmentación por text-prompt SAM3 (prompt personalizable)' },
+        { en: 'LLM summary · auto (metrics only, no image) + VLM on-demand frame analysis (image + time-window metrics)', es: 'Resumen LLM · automático (solo métricas, sin imagen) + análisis VLM de frame bajo demanda (imagen + métricas de ventana temporal)' },
       ],
-      outputs: [
-        { en: 'Annotated video', es: 'Video anotado' },
-        { en: 'LAT POS · consistency · edge use', es: 'LAT POS · consistencia · uso de pista' },
-        { en: 'GAP BAR · KERB L/R', es: 'GAP BAR · KERB izq/der' },
-        { en: 'VLM coaching text', es: 'Texto de coaching VLM' },
+      limits: [
+        { en: 'No lap timing or corner mapping', es: 'Sin tiempo por vuelta ni mapa de curvas' },
+        { en: 'No track-specific model (zero-shot only)', es: 'Sin modelo específico del kartodromo (solo zero-shot)' },
+        { en: 'LAT POS loses accuracy on GoPro POV', es: 'LAT POS pierde precisión en vista GoPro' },
       ],
     },
     {
       tier: 1,
       status: 'planned',
-      statusLabel: { en: '~2 MONTHS', es: '~2 MESES' },
-      requires: { en: '50+ labelled frames from this track + 50 sessions', es: '50+ frames etiquetados de este kartodromo + 50 sesiones' },
-      pipeline: [
-        { en: 'YOLO fine-tuned on track', es: 'YOLO fine-tuned en pista' },
-        { en: 'Lap timing + corner seg.', es: 'Tiempo por vuelta + seg. de curvas' },
-        { en: 'Helmet + gap trend', es: 'Casco + tendencia de gap' },
+      statusLabel: { en: '~2M', es: '~2M' },
+      input: { en: '50+ labelled frames from this track + 50 sessions recorded', es: '50+ frames etiquetados de este kartodromo + 50 sesiones grabadas' },
+      tech: ['YOLO11 fine-tuned', 'Lap timer', 'Corner segmentation', 'Helmet detector', 'Groq VLM'],
+      features: [
+        { en: 'Per-lap score breakdown', es: 'Desglose de score por vuelta' },
+        { en: 'Corner phases: brake · turn-in · apex · exit', es: 'Fases de curva: freno · giro · ápex · salida' },
+        { en: 'Helmet-specific detection (closer range)', es: 'Detección específica de casco (corta distancia)' },
+        { en: 'Gap trend: closing vs. losing ground', es: 'Tendencia de gap: cerrando vs. perdiendo terreno' },
+        { en: 'Overtaking opportunity flags (kart L/R)', es: 'Alertas de oportunidad de sobrepaso (kart izq/der)' },
+        { en: 'Sector-level coaching per corner', es: 'Coaching por sector, por curva' },
       ],
-      outputs: [
-        { en: 'Per-lap breakdown', es: 'Desglose por vuelta' },
-        { en: 'Brake · turn-in · apex · exit scores', es: 'Scores de freno · giro · ápex · salida' },
-        { en: 'Overtaking opportunity flags', es: 'Alertas de oportunidad de sobrepaso' },
-        { en: 'Sector-level coaching', es: 'Coaching por sector' },
+      limits: [
+        { en: 'Requires footage from this specific track', es: 'Requiere footage de este kartodromo específicamente' },
+        { en: 'No GPS: lap timing via vision landmarks only', es: 'Sin GPS: tiempo de vuelta solo por landmarks visuales' },
+        { en: 'No telemetry (throttle, brake pressure)', es: 'Sin telemetría (acelerador, presión de freno)' },
       ],
     },
     {
       tier: 2,
       status: 'roadmap',
-      statusLabel: { en: '6+ MONTHS', es: '6+ MESES' },
-      requires: { en: 'Multi-cam rig + GPS/OBD + expert reference runs', es: 'Multi-cam + GPS/OBD + vueltas de referencia de experto' },
-      pipeline: [
-        { en: 'Multi-modal fusion', es: 'Fusión multimodal' },
-        { en: 'Expert ideal-line model', es: 'Modelo de línea ideal experta' },
-        { en: 'Real-time edge inference', es: 'Inferencia en tiempo real (edge)' },
+      statusLabel: { en: '6M+', es: '6M+' },
+      input: { en: 'Fixed overhead cam + GPS/OBD + expert reference laps', es: 'Cámara fija overhead + GPS/OBD + vueltas de referencia experta' },
+      tech: ['Multi-cam fusion', 'GPS/OBD integration', 'Expert line model', 'Edge inference (Jetson/RPi)'],
+      features: [
+        { en: 'Live coaching overlay on video feed', es: 'Overlay de coaching en tiempo real sobre el video' },
+        { en: 'Delta vs. ideal racing line per corner', es: 'Delta vs. línea ideal de carrera por curva' },
+        { en: 'Telemetry charts: speed · G-force · throttle', es: 'Telemetría: velocidad · G · acelerador' },
+        { en: 'Driver progression score across sessions', es: 'Score de progresión del piloto entre sesiones' },
+        { en: 'Automated post-session report', es: 'Reporte automático post-sesión' },
       ],
-      outputs: [
-        { en: 'Live coaching overlay', es: 'Overlay de coaching en vivo' },
-        { en: 'Ideal-line delta per corner', es: 'Delta vs. línea ideal por curva' },
-        { en: 'Telemetry charts (speed · G · throttle)', es: 'Telemetría (velocidad · G · acelerador)' },
-        { en: 'Driver progression score', es: 'Score de progresión del piloto' },
+      limits: [
+        { en: 'Hardware installation required at track', es: 'Instalación de hardware requerida en el kartodromo' },
+        { en: 'Expert reference laps needed per circuit', es: 'Vueltas de referencia de experto por circuito' },
+      ],
+    },
+    {
+      tier: 3,
+      status: 'research',
+      statusLabel: { en: 'RESEARCH', es: 'INVESTIGACIÓN' },
+      input: { en: 'Full Tier 2 data + track geometry model + GPU simulation cluster', es: 'Datos completos Tier 2 + modelo geométrico de la pista + cluster GPU de simulación' },
+      tech: ['Sim environment (CARLA/Isaac)', 'PPO / SAC RL agent', 'Digital twin', 'Expert trajectory model', 'Track grip model'],
+      features: [
+        { en: 'RL agent finds optimal racing line per corner (trained entirely in simulation)', es: 'Agente RL encuentra la línea óptima por curva (entrenado completamente en simulación)' },
+        { en: 'Digital twin of track: geometry + grip zones + kerb profiles', es: 'Gemelo digital de la pista: geometría + zonas de grip + perfil de kerbs' },
+        { en: 'Real driver line vs RL optimal · delta per sector (e.g. "-0.3 s at corner 4")', es: 'Línea real del piloto vs RL óptimo · delta por sector (ej. "-0.3 s en curva 4")' },
+        { en: 'Predictive coaching: simulate "what if you brake 10 m earlier"', es: 'Coaching predictivo: simula "qué pasaría si frenarás 10 m antes"' },
+        { en: 'Agent retrains continuously with each new real session', es: 'El agente se re-entrena continuamente con cada sesión real nueva' },
+      ],
+      limits: [
+        { en: 'Track geometry must be surveyed or laser-scanned (±2 cm)', es: 'La geometría de la pista debe ser relevada o escaneada con láser (±2 cm)' },
+        { en: 'Requires full Tier 2 telemetry as simulation ground truth', es: 'Requiere telemetría completa Tier 2 como verdad de campo para la simulación' },
+        { en: 'Training phase is GPU-intensive (not real-time)', es: 'La fase de entrenamiento requiere cluster GPU (no es tiempo real)' },
+        { en: 'Sim-to-real gap: track grip variability affects transfer quality', es: 'Brecha sim-to-real: la variabilidad del grip afecta la calidad de transferencia' },
       ],
     },
   ],
@@ -812,51 +1580,53 @@ const SPORT_TIERS = {
       tier: 0,
       status: 'live',
       statusLabel: { en: 'LIVE NOW', es: 'EN VIVO' },
-      requires: { en: 'Any video — no labelled data', es: 'Cualquier video — sin datos etiquetados' },
-      pipeline: [
-        { en: 'MediaPipe Pose (17 kpts)', es: 'MediaPipe Pose (17 puntos)' },
-        { en: 'Terrain classifier', es: 'Clasificador de terreno' },
-        { en: 'Groq VLM (1 call)', es: 'Groq VLM (1 llamada)' },
+      input: { en: 'Any video — no labelled data required', es: 'Cualquier video — sin datos etiquetados' },
+      tech: ['MediaPipe Pose', 'Terrain classifier (HSV)', 'Groq llama-4-scout'],
+      features: [
+        { en: 'Body pose: 17 keypoints per frame', es: 'Pose corporal: 17 puntos clave por frame' },
+        { en: 'Balance score (hip/shoulder alignment)', es: 'Score de balance (alineación cadera/hombros)' },
+        { en: 'Line efficiency (path relative to terrain)', es: 'Eficiencia de línea (trayectoria vs. terreno)' },
+        { en: 'Terrain context cues (rock, root, drop)', es: 'Señales de terreno (piedra, raíz, caída)' },
+        { en: 'VLM coaching · 1 call per video', es: 'Coaching VLM · 1 llamada por video' },
       ],
-      outputs: [
-        { en: 'Annotated video', es: 'Video anotado' },
-        { en: 'Balance score · line efficiency', es: 'Score de balance · eficiencia de línea' },
-        { en: 'Terrain context cues', es: 'Señales de contexto de terreno' },
-        { en: 'VLM coaching text', es: 'Texto de coaching VLM' },
+      limits: [
+        { en: 'No per-section breakdown (whole run only)', es: 'Sin desglose por sección (solo la bajada completa)' },
+        { en: 'Terrain classifier is zero-shot, not trained', es: 'Clasificador de terreno zero-shot, no entrenado' },
+        { en: 'No speed or G-force data', es: 'Sin datos de velocidad o G' },
       ],
     },
     {
       tier: 1,
       status: 'planned',
-      statusLabel: { en: '~3 MONTHS', es: '~3 MESES' },
-      requires: { en: '100+ annotated stances + terrain labels', es: '100+ posturas anotadas + etiquetas de terreno' },
-      pipeline: [
-        { en: 'Fine-tuned pose model', es: 'Modelo de pose fine-tuned' },
-        { en: 'Terrain segmentation', es: 'Segmentación de terreno' },
-        { en: 'Section-aware scoring', es: 'Scoring por tipo de sección' },
-      ],
-      outputs: [
-        { en: 'Per-section posture scores', es: 'Scores de postura por sección' },
-        { en: 'Posture trend over session', es: 'Tendencia postural en la sesión' },
-        { en: 'Terrain-specific guidance', es: 'Guía específica por terreno' },
+      statusLabel: { en: '~3M', es: '~3M' },
+      input: { en: '100+ annotated stances + terrain-labelled footage', es: '100+ posturas anotadas + footage con etiquetas de terreno' },
+      tech: ['Fine-tuned pose model', 'Terrain segmentation', 'Section detector', 'Groq VLM'],
+      features: [
+        { en: 'Per-section posture scoring (rock vs. root vs. drop)', es: 'Score de postura por sección (piedra / raíz / caída)' },
+        { en: 'Posture trend across the full session', es: 'Tendencia postural en toda la sesión' },
         { en: 'Run-over-run comparison', es: 'Comparación bajada a bajada' },
+        { en: 'Terrain-specific guidance per section type', es: 'Guía específica por tipo de terreno' },
+      ],
+      limits: [
+        { en: 'Requires labelled footage from similar trails', es: 'Requiere footage etiquetado de senderos similares' },
+        { en: 'No sensor data (vision only)', es: 'Sin sensores (solo visión)' },
       ],
     },
     {
       tier: 2,
       status: 'roadmap',
-      statusLabel: { en: '12+ MONTHS', es: '12+ MESES' },
-      requires: { en: 'IMU + GPS + expert reference runs', es: 'IMU + GPS + bajadas de referencia de experto' },
-      pipeline: [
-        { en: 'Sensor + video fusion', es: 'Fusión sensor + video' },
-        { en: 'Expert stance matching', es: 'Matching con postura de experto' },
-        { en: 'Real-time edge inference', es: 'Inferencia en tiempo real (edge)' },
+      statusLabel: { en: '12M+', es: '12M+' },
+      input: { en: 'IMU + GPS + expert reference runs on same trail', es: 'IMU + GPS + bajadas de referencia de experto en el mismo sendero' },
+      tech: ['IMU/GPS fusion', 'Expert stance model', 'Real-time edge inference'],
+      features: [
+        { en: 'Real-time posture feedback during ride', es: 'Feedback de postura en tiempo real durante la bajada' },
+        { en: 'Force / load analysis per obstacle', es: 'Análisis de fuerzas / carga por obstáculo' },
+        { en: 'Trajectory delta vs. expert reference', es: 'Delta de trayectoria vs. referencia de experto' },
+        { en: 'Multi-run progression dashboard', es: 'Dashboard de progresión multi-bajada' },
       ],
-      outputs: [
-        { en: 'Real-time posture feedback', es: 'Feedback de postura en tiempo real' },
-        { en: 'Force / load analysis', es: 'Análisis de fuerzas / carga' },
-        { en: 'Trajectory vs. expert delta', es: 'Trayectoria vs. delta de experto' },
-        { en: 'Multi-run progression', es: 'Progresión multi-bajada' },
+      limits: [
+        { en: 'Wearable hardware required (IMU vest/helmet)', es: 'Hardware wearable requerido (IMU en chaleco/casco)' },
+        { en: 'Expert reference runs needed per trail', es: 'Bajadas de referencia por sendero' },
       ],
     },
   ],
@@ -865,131 +1635,301 @@ const SPORT_TIERS = {
       tier: 0,
       status: 'shell',
       statusLabel: { en: 'COMING', es: 'PRÓXIMO' },
-      requires: { en: 'Any video — no labelled data', es: 'Cualquier video — sin datos etiquetados' },
-      pipeline: [
-        { en: 'YOLOv8 + SAM2', es: 'YOLOv8 + SAM2' },
-        { en: 'Pose estimation', es: 'Estimación de pose' },
-        { en: 'Wave classifier', es: 'Clasificador de ola' },
-      ],
-      outputs: [
-        { en: 'Annotated video', es: 'Video anotado' },
-        { en: 'Wave phase detection', es: 'Detección de fase de ola' },
+      input: { en: 'Any video — no labelled data required', es: 'Cualquier video — sin datos etiquetados' },
+      tech: ['YOLO11', 'SAM3', 'MediaPipe Pose', 'Wave classifier (HSV)'],
+      features: [
+        { en: 'Surfer detection + pose per frame', es: 'Detección de surfista + pose por frame' },
+        { en: 'Wave phase detection (paddle, pop-up, ride)', es: 'Detección de fase de ola (remada, pop-up, ride)' },
         { en: 'Balance / posture analysis', es: 'Análisis de balance / postura' },
-        { en: 'Maneuver tagging', es: 'Etiquetado de maniobras' },
+        { en: 'Maneuver tagging (cutback, turn, wipeout)', es: 'Etiquetado de maniobras (cutback, giro, caída)' },
+      ],
+      limits: [
+        { en: 'Engine not yet built (declared shell)', es: 'Motor aún no construido (shell declarado)' },
+        { en: 'Wave quality not measured', es: 'Calidad de ola no medida' },
+        { en: 'No scoring (tagging only)', es: 'Sin scoring (solo etiquetado)' },
       ],
     },
     {
       tier: 1,
       status: 'planned',
-      statusLabel: { en: '~4 MONTHS', es: '~4 MESES' },
-      requires: { en: '200+ labelled wave/maneuver examples', es: '200+ ejemplos etiquetados de ola/maniobra' },
-      pipeline: [
-        { en: 'Wave segmentation model', es: 'Modelo de segmentación de ola' },
-        { en: 'Maneuver classifier', es: 'Clasificador de maniobra' },
-        { en: 'Timing analysis', es: 'Análisis de timing' },
+      statusLabel: { en: '~4M', es: '~4M' },
+      input: { en: '200+ labelled wave/maneuver clips from local break', es: '200+ clips de ola/maniobra etiquetados de la rompiente local' },
+      tech: ['Wave segmentation model', 'Maneuver classifier', 'Timing analyzer', 'Groq VLM'],
+      features: [
+        { en: 'Maneuver quality scores (power, flow, control)', es: 'Scores de calidad de maniobra (potencia, flow, control)' },
+        { en: 'Wave selection quality analysis', es: 'Análisis de calidad de selección de ola' },
+        { en: 'Pop-up timing feedback', es: 'Feedback de timing de pop-up' },
+        { en: 'Session maneuver log + summary', es: 'Log de maniobras de sesión + resumen' },
       ],
-      outputs: [
-        { en: 'Maneuver scores', es: 'Scores de maniobra' },
-        { en: 'Wave-selection quality', es: 'Calidad de selección de ola' },
-        { en: 'Timing feedback', es: 'Feedback de timing' },
-        { en: 'Session maneuver log', es: 'Log de maniobras de sesión' },
+      limits: [
+        { en: 'Model trained on specific break (not universal)', es: 'Modelo entrenado en rompiente específica (no universal)' },
+        { en: 'No real-time (post-session only)', es: 'Sin tiempo real (solo post-sesión)' },
       ],
     },
     {
       tier: 2,
       status: 'roadmap',
-      statusLabel: { en: '12+ MONTHS', es: '12+ MESES' },
-      requires: { en: 'Drone + board sensors + GPS + judge reference', es: 'Drone + sensores de tabla + GPS + referencia de juez' },
-      pipeline: [
-        { en: 'Multi-view fusion', es: 'Fusión multi-vista' },
-        { en: 'Wave quality model', es: 'Modelo de calidad de ola' },
-        { en: 'Judge-style scoring', es: 'Scoring estilo juez' },
+      statusLabel: { en: '12M+', es: '12M+' },
+      input: { en: 'Drone + board pressure sensors + GPS + judge reference scores', es: 'Drone + sensores de presión de tabla + GPS + scores de referencia de juez' },
+      tech: ['Multi-view drone fusion', 'Wave quality model', 'Judge-style scoring', 'Edge inference'],
+      features: [
+        { en: 'Live heat scoring during competition', es: 'Scoring de heat en vivo durante la competencia' },
+        { en: 'Wave quality correlation (size, shape, power)', es: 'Correlación de calidad de ola (tamaño, forma, potencia)' },
+        { en: 'Judge-style feedback per ride', es: 'Feedback estilo juez por ride' },
+        { en: 'Priority and positioning advice', es: 'Consejo de prioridad y posicionamiento' },
       ],
-      outputs: [
-        { en: 'Live heat scoring', es: 'Scoring de heat en vivo' },
-        { en: 'Wave correlation', es: 'Correlación con ola' },
-        { en: 'Judge-style feedback', es: 'Feedback estilo juez' },
-        { en: 'Priority / positioning advice', es: 'Consejo de prioridad / posicionamiento' },
+      limits: [
+        { en: 'Drone + sensor hardware required', es: 'Hardware de drone + sensores requerido' },
+        { en: 'Judge reference scores needed to calibrate', es: 'Scores de referencia de juez para calibrar' },
       ],
     },
   ],
 };
 
-function TierBlock({ tier, sc, lang }) {
-  const isLive   = tier.status === 'live';
-  const isShell  = tier.status === 'shell';
-  const isPlanned = tier.status === 'planned';
+// ── Tech term modals ──────────────────────────────────────────────────────────
 
-  const statusColor = isLive ? '#22c55e' : isShell ? '#555' : '#6b6b6b';
-  const borderColor = isLive ? sc.color + '50' : '#222';
-  const bg          = isLive ? sc.color + '07' : '#111111';
+const MODAL_CONTENT = {
+  'YOLO11n': {
+    title: 'YOLO11 nano — Object Detector',
+    body: {
+      en: 'Ultralytics YOLO11 nano is the latest and fastest variant of the YOLO series (2024). It processes each video frame to produce kart bounding boxes (x, y, w, h, confidence). Compared to YOLOv8n it has improved detection accuracy at the same or higher speed (~200 FPS on CPU). Trained on COCO (80 classes). Karts are detected via the vehicle class family; zero-shot at Tier 0. Override model via KART_YOLO_MODEL env var.',
+      es: 'Ultralytics YOLO11 nano es la variante más reciente y rápida de la serie YOLO (2024). Procesa cada frame para producir bounding boxes de karts (x, y, w, h, confianza). Comparado con YOLOv8n tiene mejor precisión a la misma velocidad (~200 FPS en CPU). Entrenado en COCO (80 clases). Karts detectados por familia de clases de vehículos; zero-shot en Tier 0. Sobreescribir modelo con la variable de entorno KART_YOLO_MODEL.',
+    },
+  },
+  'YOLO11 fine-tuned': {
+    title: 'YOLO11 Fine-tuning — Domain Adaptation',
+    body: {
+      en: 'Fine-tuning takes a pre-trained YOLO11 model and continues training on domain-specific labelled data. For Tier 1: manually label 50+ frames from this track (karts, helmets, kerbs). Training runs 50–100 epochs on a GPU (~1 h). Result: detection accuracy jumps at this track\'s camera angle, lighting, and kart types — vs zero-shot COCO.',
+      es: 'El fine-tuning toma un modelo YOLO11 pre-entrenado y continúa el entrenamiento con datos del dominio específico. Para Tier 1: etiquetar manualmente 50+ frames de este kartodromo (karts, cascos, kerbs). Entrenamiento de 50–100 épocas en GPU (~1 h). Resultado: la precisión mejora significativamente para este ángulo, iluminación y tipos de kart — vs COCO zero-shot.',
+    },
+  },
+  'ByteTrack': {
+    title: 'ByteTrack — Multi-Object Tracker',
+    body: {
+      en: 'ByteTrack pairs with any detector to assign persistent IDs across frames. Unlike SORT (which only tracks high-confidence detections), ByteTrack also uses low-confidence detections to maintain track continuity through occlusions. It uses a Kalman filter for motion prediction and IoU (Intersection over Union) matching to associate detections frame-to-frame. Result: each kart keeps ID #1, #2… even when karts cross or briefly disappear.',
+      es: 'ByteTrack se combina con cualquier detector para asignar IDs persistentes entre frames. A diferencia de SORT (que solo trackea detecciones de alta confianza), ByteTrack también usa detecciones de baja confianza para mantener continuidad durante oclusiones. Usa un filtro de Kalman para predicción de movimiento y matching por IoU (Intersección sobre Unión) para asociar detecciones entre frames. Resultado: cada kart mantiene el ID #1, #2… incluso cuando se cruzan o desaparecen brevemente.',
+    },
+  },
+  'SAM3.1 + HSV': {
+    title: 'SAM3.1 + HSV — Track Segmentation',
+    body: {
+      en: 'Hybrid approach using Meta SAM3.1 (Segment Anything Model 3.1 multiplex, 848M params) with text prompts, calibrated into an HSV mask for full-video speed. Step 1: SAM3 runs on a single best-calibration frame with a natural-language text prompt (e.g. "asphalt karting track surface") — no coordinate clicking needed. Step 2: HSV color ranges are extracted from the SAM3 mask pixels. Step 3: The calibrated HSV filter is applied to all frames at ~100 FPS. Result: 12× faster than SAM3 full-video propagation with no coordinate fragility. The text prompt is customizable per session from the Analyze page.',
+      es: 'Enfoque híbrido que usa Meta SAM3.1 (Segment Anything Model 3.1 multiplex, 848M params) con text prompts, calibrado en una máscara HSV para velocidad en todo el video. Paso 1: SAM3 corre sobre un único frame de calibración con un prompt de texto en lenguaje natural (ej. "asphalt karting track surface") — sin necesidad de hacer clic en coordenadas. Paso 2: Los rangos de color HSV se extraen de los píxeles de la máscara SAM3. Paso 3: El filtro HSV calibrado se aplica a todos los frames a ~100 FPS. Resultado: 12× más rápido que la propagación SAM3 completa sin fragilidad de coordenadas. El texto del prompt es personalizable por sesión desde la página de Analizar.',
+    },
+  },
+  'HSV mask': {
+    title: 'HSV Mask — Track Color Filtering',
+    body: {
+      en: 'Hue-Saturation-Value color space filtering. HSV separates color (Hue) from brightness (Value), making it more robust to lighting changes than RGB. The SAM3 mask from the calibration frame extracts the H, S, V min/max ranges of the asphalt for this specific camera and lighting. Those calibrated ranges are applied every frame via cv2.inRange() to produce the green track overlay without re-running SAM3.',
+      es: 'Filtrado por espacio de color Hue-Saturation-Value. HSV separa el color (Hue) del brillo (Value), haciéndolo más robusto ante cambios de iluminación que RGB. La máscara SAM3 del frame de calibración extrae los rangos mínimos y máximos de H, S, V del asfalto para esta cámara e iluminación específica. Esos rangos se aplican en cada frame con cv2.inRange() produciendo el overlay verde de pista sin volver a ejecutar SAM3.',
+    },
+  },
+  'Groq llama-4-scout': {
+    title: 'Groq llama-4-scout — LLM + VLM',
+    body: {
+      en: "Two distinct AI calls via Groq llama-4-scout:\n\n• LLM (automatic, text-only): runs once at end of pipeline using ONLY session metrics — kart scores, kerb rate, consistency, edge use. No image sent. Returns a general performance summary.\n\n• VLM (on-demand, image + time-window metrics): activates only when the user explicitly pins a timestamp in the review player. Input: annotated frame at that exact moment + telemetry within ±5s (kerb events, gap, apex markers, session stats). Returns frame-specific coaching. The VLM never runs automatically — it can only comment on visual content when a frame is deliberately selected.\n\nGroq LPU: ~800 tokens/s, each call under 2 s.",
+      es: "Dos llamadas IA distintas vía Groq llama-4-scout:\n\n• LLM (automático, solo texto): se ejecuta una vez al final del pipeline usando ÚNICAMENTE métricas de sesión — scores de karts, tasa de kerb, consistencia, uso de pista. Sin imagen. Devuelve un resumen general de rendimiento.\n\n• VLM (bajo demanda, imagen + métricas de ventana temporal): solo se activa cuando el usuario ancla explícitamente un timestamp en el reproductor. Entrada: el frame anotado exacto en ese momento + telemetría dentro de ±5s (eventos kerb, gap, marcadores de ápex, estadísticas globales). Devuelve coaching específico de ese instante. El VLM nunca corre automáticamente — solo puede opinar sobre contenido visual cuando un frame es deliberadamente seleccionado.\n\nLPU de Groq: ~800 tokens/s, cada llamada en menos de 2 s.",
+    },
+  },
+  'PPO / SAC RL agent': {
+    title: 'Reinforcement Learning — PPO & SAC',
+    body: {
+      en: 'Proximal Policy Optimization (PPO) and Soft Actor-Critic (SAC) are state-of-the-art RL algorithms for continuous control. In the karting context, the agent learns a policy: given track state (position, speed, heading), output optimal steering/throttle to minimize lap time. The agent trains entirely inside a simulation (digital twin), using millions of virtual laps. The resulting optimal racing line is then used to analyze real driver footage — no on-track training required.',
+      es: 'Proximal Policy Optimization (PPO) y Soft Actor-Critic (SAC) son algoritmos de RL de última generación para control continuo. En el contexto del karting, el agente aprende una política: dado el estado de la pista (posición, velocidad, rumbo), generar el volante/acelerador óptimo para minimizar el tiempo de vuelta. El agente se entrena completamente dentro de una simulación (gemelo digital), usando millones de vueltas virtuales. La línea de carrera óptima resultante se usa para analizar el footage real — sin entrenamiento en pista.',
+    },
+  },
+  'Digital twin': {
+    title: 'Digital Twin — Virtual Track Model',
+    body: {
+      en: 'A digital twin is a physics-accurate virtual replica of a physical system. For a karting track: (1) precise geometric model of track layout (from laser scan or photogrammetry), (2) surface friction model per zone (asphalt grip, kerb grip, grass penalty), (3) kart physics model (weight, tire curve, engine torque). The RL agent trains inside this simulation. The fidelity of the twin directly determines the quality of the coaching output transferred to real-world driving.',
+      es: 'Un gemelo digital es una réplica virtual con física precisa de un sistema físico. Para un kartodromo: (1) modelo geométrico preciso del trazado (de escaneo láser o fotogrametría), (2) modelo de fricción superficial por zona (grip del asfalto, grip del kerb, penalización de césped), (3) modelo físico del kart (peso, curva de neumático, torque del motor). El agente RL se entrena dentro de esta simulación. La fidelidad del gemelo determina directamente la calidad del coaching transferido a la conducción real.',
+    },
+  },
+  'MediaPipe Pose': {
+    title: 'MediaPipe Pose — Body Keypoint Estimation',
+    body: {
+      en: 'Google MediaPipe Pose detects 33 body landmarks (keypoints) per frame in real time, including shoulders, hips, knees, ankles, and wrists. For downhill analysis, the key landmarks are shoulders, hips, and knees — used to compute trunk lean angle, hip/shoulder alignment, and center-of-mass position relative to the bike. Runs on CPU at ~30 FPS. Zero-shot, no training required.',
+      es: 'Google MediaPipe Pose detecta 33 puntos de referencia corporales (keypoints) por frame en tiempo real, incluyendo hombros, caderas, rodillas, tobillos y muñecas. Para el análisis de downhill, los landmarks clave son hombros, caderas y rodillas — usados para calcular el ángulo de inclinación del tronco, alineación cadera/hombros, y posición del centro de masa relativo a la bici. Corre en CPU a ~30 FPS. Zero-shot, sin entrenamiento requerido.',
+    },
+  },
+  'Sim environment (CARLA/Isaac)': {
+    title: 'Simulation Environment — CARLA / Isaac Sim',
+    body: {
+      en: 'CARLA (open-source) and NVIDIA Isaac Sim are physics-accurate driving simulators. For karting, a custom track model is loaded into the simulator with the kart physics parameters. The RL agent interacts with the simulation at 1000+ steps/second (much faster than real time), allowing millions of laps to be trained in hours. The simulator handles tire physics, collision detection, and environmental effects (grip under rain, etc.).',
+      es: 'CARLA (open-source) y NVIDIA Isaac Sim son simuladores de conducción con física precisa. Para karting, se carga un modelo personalizado de la pista en el simulador con los parámetros físicos del kart. El agente RL interactúa con la simulación a 1000+ pasos/segundo (mucho más rápido que el tiempo real), permitiendo entrenar millones de vueltas en horas. El simulador maneja la física de neumáticos, detección de colisiones y efectos ambientales (grip bajo lluvia, etc.).',
+    },
+  },
+};
+
+function InfoModal({ term, onClose, lang, color }) {
+  const content = MODAL_CONTENT[term];
+  if (!content) return null;
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1000,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: '#00000092', backdropFilter: 'blur(6px)',
+      }}>
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: '#141414', border: `1px solid ${color}40`,
+          borderRadius: 12, padding: '28px 30px',
+          maxWidth: 520, width: '90%',
+          boxShadow: `0 0 40px ${color}18`,
+        }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16, gap: 12 }}>
+          <div>
+            <span style={{
+              fontFamily: 'Space Mono, monospace', fontSize: 8, color, letterSpacing: '0.1em',
+              background: color + '15', border: `1px solid ${color}30`,
+              borderRadius: 3, padding: '2px 8px', display: 'inline-block', marginBottom: 8,
+            }}>{term}</span>
+            <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 16, fontWeight: 700, color: '#EDEDE8' }}>
+              {content.title}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ color: '#555', fontSize: 22, lineHeight: 1, flexShrink: 0, marginTop: -2 }}>×</button>
+        </div>
+        {/* Body */}
+        <p style={{ margin: 0, fontFamily: 'Space Grotesk, sans-serif', fontSize: 13, color: '#aaa', lineHeight: 1.75 }}>
+          {tl(content.body, lang)}
+        </p>
+        <div style={{ marginTop: 18, textAlign: 'right' }}>
+          <button onClick={onClose} style={{
+            fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#555',
+            border: '1px solid #2a2a2a', borderRadius: 4, padding: '4px 14px',
+            letterSpacing: '0.08em',
+          }}>{lang === 'es' ? 'CERRAR' : 'CLOSE'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Tier block ────────────────────────────────────────────────────────────────
+
+function TierBlock({ tier, sc, lang }) {
+  const [modalTerm, setModalTerm] = useState(null);
+  const isLive     = tier.status === 'live';
+  const isShell    = tier.status === 'shell';
+  const isResearch = tier.status === 'research';
+  const statusColor = isLive ? '#22c55e' : isResearch ? '#818cf8' : isShell ? '#555' : '#6b6b6b';
+  const dim = !isLive;
+
+  const col = sc.colorHex;
 
   return (
-    <div style={{ border: `1px solid ${borderColor}`, borderRadius: 8, overflow: 'hidden', background: bg }}>
+    <div style={{
+      border: `1px solid ${isLive ? col + '55' : '#1e1e1e'}`,
+      borderRadius: 8, overflow: 'hidden',
+      background: isLive ? col + '07' : '#0d0d0d',
+    }}>
       {/* Header */}
       <div style={{
-        padding: '9px 16px', background: '#161616', borderBottom: '1px solid #1a1a1a',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '10px 18px', background: '#141414', borderBottom: '1px solid #1a1a1a',
+        display: 'flex', alignItems: 'center', gap: 14,
       }}>
-        <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: isLive ? sc.color : '#555', letterSpacing: '0.1em' }}>
+        <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 12, color: dim ? '#555' : col, letterSpacing: '0.1em', flexShrink: 0 }}>
           TIER {tier.tier}
         </span>
         <span style={{
-          fontFamily: 'Space Mono, monospace', fontSize: 8, letterSpacing: '0.08em',
-          color: statusColor, background: statusColor + '18',
-          border: `1px solid ${statusColor}40`, borderRadius: 3, padding: '2px 8px',
+          fontFamily: 'Space Mono, monospace', fontSize: 9, letterSpacing: '0.07em',
+          color: statusColor, border: `1px solid ${statusColor}50`, borderRadius: 3, padding: '2px 9px', flexShrink: 0,
         }}>
           {tl(tier.statusLabel, lang)}
         </span>
+        <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 14, color: dim ? '#999' : '#ccc', flex: 1 }}>
+          {tl(tier.input, lang)}
+        </span>
       </div>
 
-      {/* Flow row */}
-      <div style={{ padding: '14px 16px', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+      {/* Body: 3 columns */}
+      <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr 1fr', gap: 0 }}>
 
-        {/* Input */}
-        <div style={{ background: '#1a1a1a', borderRadius: 6, padding: '9px 13px', minWidth: 130, maxWidth: 200 }}>
-          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 8, color: '#3a3a3a', letterSpacing: '0.08em', marginBottom: 5 }}>INPUT</div>
-          <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 12, color: isLive ? '#EDEDE8' : '#555', lineHeight: 1.4 }}>
-            {tl(tier.requires, lang)}
+        {/* Tech stack */}
+        <div style={{ padding: '16px 18px', borderRight: '1px solid #1a1a1a' }}>
+          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: dim ? '#666' : '#777', letterSpacing: '0.09em', marginBottom: 12 }}>
+            {lang === 'es' ? 'TECNOLOGÍAS' : 'TECH STACK'}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {tier.tech.map((t, i) => {
+              const hasModal = !!MODAL_CONTENT[t];
+              return (
+                <span key={i}
+                  onClick={() => hasModal && setModalTerm(t)}
+                  title={hasModal ? (lang === 'es' ? 'Haz clic para saber más' : 'Click to learn more') : undefined}
+                  style={{
+                    fontFamily: 'Space Mono, monospace', fontSize: 10,
+                    color: dim ? '#aaa' : col,
+                    background: dim ? '#1c1c1c' : col + '12',
+                    border: `1px solid ${dim ? '#333' : col + '25'}`,
+                    borderRadius: 3, padding: '3px 9px', display: 'inline-flex', alignItems: 'center', gap: 6,
+                    whiteSpace: 'nowrap', width: 'fit-content',
+                    cursor: hasModal ? 'pointer' : 'default',
+                    transition: 'background 0.15s',
+                  }}>
+                  {t}
+                  {hasModal && (
+                    <span style={{ fontSize: 9, opacity: 0.45, fontFamily: 'sans-serif' }}>?</span>
+                  )}
+                </span>
+              );
+            })}
           </div>
         </div>
 
-        <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 14, color: '#333', alignSelf: 'center', paddingTop: 4 }}>→</div>
-
-        {/* Pipeline steps */}
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-          {tier.pipeline.map((step, i) => (
-            <React.Fragment key={i}>
-              <div style={{
-                border: `1px solid ${isLive ? sc.color + '35' : '#1a1a1a'}`,
-                borderRadius: 6, padding: '7px 12px', background: isLive ? sc.color + '09' : '#0d0d0d',
-              }}>
-                <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 12, color: isLive ? '#EDEDE8' : '#3a3a3a', whiteSpace: 'nowrap' }}>
-                  {tl(step, lang)}
-                </div>
+        {/* Features */}
+        <div style={{ padding: '16px 18px', borderRight: '1px solid #1a1a1a' }}>
+          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: dim ? '#666' : '#777', letterSpacing: '0.09em', marginBottom: 12 }}>
+            {lang === 'es' ? (isLive ? 'LO QUE YA HACE' : 'LO QUE HARÁ') : (isLive ? 'WHAT IT DOES' : 'WHAT IT WILL DO')}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {tier.features.map((f, i) => (
+              <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <span style={{ color: dim ? '#666' : col, fontSize: 10, flexShrink: 0, marginTop: 2 }}>◆</span>
+                <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 14, color: dim ? '#aaa' : '#EDEDE8', lineHeight: 1.45 }}>
+                  {tl(f, lang)}
+                </span>
               </div>
-              {i < tier.pipeline.length - 1 && (
-                <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 12, color: '#222' }}>→</div>
-              )}
-            </React.Fragment>
-          ))}
+            ))}
+          </div>
         </div>
 
-        <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 14, color: '#333', alignSelf: 'center', paddingTop: 4 }}>→</div>
-
-        {/* Outputs */}
-        <div style={{ background: '#1a1a1a', borderRadius: 6, padding: '9px 13px' }}>
-          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 8, color: '#3a3a3a', letterSpacing: '0.08em', marginBottom: 5 }}>OUTPUTS</div>
-          {tier.outputs.map((out, i) => (
-            <div key={i} style={{ display: 'flex', gap: 7, alignItems: 'center', marginBottom: i < tier.outputs.length - 1 ? 4 : 0 }}>
-              <span style={{ color: isLive ? sc.color : '#222', fontSize: 9, flexShrink: 0 }}>◆</span>
-              <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 12, color: isLive ? '#EDEDE8' : '#3a3a3a' }}>
-                {tl(out, lang)}
-              </span>
-            </div>
-          ))}
+        {/* Requirements / Limitations */}
+        <div style={{ padding: '16px 18px' }}>
+          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: dim ? '#666' : '#777', letterSpacing: '0.09em', marginBottom: 12 }}>
+            {isLive
+              ? (lang === 'es' ? 'LIMITACIONES ACTUALES' : 'CURRENT LIMITATIONS')
+              : (lang === 'es' ? 'PARA LLEGAR A ESTE TIER' : 'REQUIREMENTS TO REACH')}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {tier.limits.map((l, i) => (
+              <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <span style={{ color: isLive ? '#ef6444' : '#eab308', fontSize: 10, flexShrink: 0, marginTop: 2 }}>
+                  {isLive ? '!' : '→'}
+                </span>
+                <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 14, color: dim ? '#aaa' : '#bbb', lineHeight: 1.45 }}>
+                  {tl(l, lang)}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
+
+      {/* Modal */}
+      {modalTerm && (
+        <InfoModal
+          term={modalTerm}
+          onClose={() => setModalTerm(null)}
+          lang={lang}
+          color={isLive ? col : statusColor}
+        />
+      )}
     </div>
   );
 }
@@ -1015,20 +1955,20 @@ export function MethodPage({ state }) {
 
   return (
     <div style={{ padding: '52px 0 0', minHeight: '100vh' }}>
-      <div style={{ maxWidth: 980, margin: '0 auto', padding: '48px 32px' }}>
+      <div style={{ maxWidth: 1120, margin: '0 auto', padding: '48px 40px' }}>
 
         <div style={{ marginBottom: 36 }}>
-          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#6b6b6b', letterSpacing: '0.12em', marginBottom: 10 }}>
+          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 11, color: '#6b6b6b', letterSpacing: '0.12em', marginBottom: 10 }}>
             {lang === 'es' ? 'ARQUITECTURA' : 'SYSTEM ARCHITECTURE'}
           </div>
-          <h2 style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 26, fontWeight: 700, color: '#EDEDE8', margin: 0 }}>
+          <h2 style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 30, fontWeight: 700, color: '#EDEDE8', margin: 0 }}>
             {lang === 'es' ? 'Cómo funciona' : 'How it works'}
           </h2>
         </div>
 
         {/* Tier flows */}
         <div style={{ marginBottom: 48 }}>
-          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: sc.color, letterSpacing: '0.12em', marginBottom: 16 }}>
+          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 11, color: sc.color, letterSpacing: '0.12em', marginBottom: 16 }}>
             {tl(sc.label, lang).toUpperCase()} — {lang === 'es' ? 'PLAN DE CAPACIDADES POR TIER' : 'CAPABILITY ROADMAP BY TIER'}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1038,10 +1978,13 @@ export function MethodPage({ state }) {
           </div>
         </div>
 
+        {/* Camera source matrix + pipeline flows */}
+        <CameraSection sport={sport} sc={sc} lang={lang} />
+
         {/* Capability matrix */}
         <div style={{ marginBottom: 48 }}>
           <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#6b6b6b', letterSpacing: '0.12em', marginBottom: 16 }}>
-            {lang === 'es' ? 'MATRIZ DE CAPACIDADES' : 'CAPABILITY MATRIX'}
+            {lang === 'es' ? 'MATRIZ DE CAPACIDADES POR DEPORTE' : 'CAPABILITY MATRIX BY SPORT'}
           </div>
           <div style={{ border: '1px solid #222', borderRadius: 8, overflow: 'hidden' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '220px repeat(3, 1fr)', background: '#161616', borderBottom: '1px solid #222' }}>

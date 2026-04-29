@@ -99,7 +99,8 @@ function App() {
     async function poll() {
       const result = await checkHealth();
       const online = result && result.status === 'ok';
-      setState(s => ({ ...s, backendOnline: online, demo: !online ? true : s.demo }));
+      // When backend comes online → clear demo automatically; when offline → force demo
+      setState(s => ({ ...s, backendOnline: online, demo: !online }));
       if (online) setWakeState('live');
     }
     poll();
