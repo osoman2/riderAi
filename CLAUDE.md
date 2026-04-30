@@ -7,10 +7,12 @@ DriverCoach is a multi-sport performance review shell with a clean frontend and 
 Incremental VRL project.
 
 ## Current Operating State
-- `streamlit/` contains the full source pipeline logic — source of truth for analytics.
-- `backend/` is a FastAPI wrapper that imports from `streamlit/src/` and exposes REST endpoints.
-- `frontend/` is a Vite React app converted from `Referencia_front/` with real API wiring.
-- Downhill is the only runnable analysis path; karting and surf are declared shells.
+- `streamlit/` contains the full source pipeline logic — source of truth for downhill analytics.
+- `backend/` is a FastAPI wrapper exposing REST endpoints; imports karting pipeline directly.
+- `frontend/` is a Vite React app with real API wiring and DEMO mode fallback.
+- Karting: fully runnable (FPV + action cam) via `karting/demo/pipeline.py`.
+- Downhill: runnable via streamlit pipeline (YOLO11n pose model).
+- Surf: declared shell, no engine yet.
 - Frontend works in DEMO mode when backend is unavailable (health-checked every 30s).
 
 ## Source of Truth
@@ -21,14 +23,51 @@ Incremental VRL project.
 - `frontend/src/review.jsx` — Session review with real videos + data
 - `frontend/src/core.jsx` — SPORTS config, Nav, shared UI
 - `frontend/public/karting-demo/` — Demo videos + summary JSONs
-- `karting/demo/pipeline.py` — Karting CV pipeline (SAM2 + YOLO + VLM)
+- `karting/demo/pipeline.py` — Karting CV pipeline (SAM3+HSV + YOLO11n + LLM/VLM)
+- `karting/notebooks/` — SAM2 vs SAM3 comparison notebook
 - `streamlit/src/services/pipeline.py` — Downhill analysis pipeline
 
 ## Stack and Architecture
-- Backend: FastAPI + Uvicorn, imports pipeline from `streamlit/src/`
+- Backend: FastAPI + Uvicorn, imports karting pipeline from `karting/demo/` and downhill from `streamlit/src/`
 - Frontend: React 18 + Vite, Space Grotesk + Space Mono fonts
 - Storage: `data/outputs/<session_id>/` — annotated video, features.csv, features.json, meta.json
 - Backend serves videos via `/sessions/{id}/video/{input|annotated}`
+
+## Python Environments
+
+### `backend/.venv` — single environment for API + all pipelines
+This is the **canonical runtime environment**. It contains everything needed to run both the FastAPI server and the CV pipelines (SAM3, YOLO11n, Groq, Anthropic).
+
+```
+fastapi + uvicorn          # API server
+sam3 == 0.1.0              # track segmentation (editable from facebookresearch/sam3)
+ultralytics == 8.4.41      # YOLO11n kart / YOLO26m pose detection
+torch == 2.11.0            # deep learning runtime
+xformers == 0.0.35         # efficient attention for SAM3
+triton-windows             # required by SAM3 on Windows
+groq == 1.2.0              # Groq LLM API (llama-4-scout)
+anthropic == 0.97.0        # Anthropic fallback (claude-haiku)
+opencv-python              # video processing
+numpy == 1.26.4            # pinned — SAM3 requires numpy 1.x
+imageio-ffmpeg             # H.264 re-encode for browser playback
+scipy, pandas, polars      # data processing
+```
+
+> ⚠️ numpy is pinned to 1.26.4 by SAM3. Do NOT upgrade without testing SAM3 first.
+
+### `conda/sam3` — legacy research environment (do not use for the API)
+Used only for running the comparison notebook or isolated SAM3 experiments.
+Contains the same packages as `.venv` but with conda Python and CUDA 12.8 torch.
+Keep it around for notebook work; do not rely on it for the backend.
+
+### Activation
+```bash
+# Backend API + pipeline (Windows)
+backend\.venv\Scripts\activate
+
+# Research / notebook only
+conda activate sam3
+```
 
 ## Run Commands
 
@@ -36,12 +75,16 @@ Incremental VRL project.
 ```bash
 cd backend
 python -m venv .venv
-.venv\Scripts\activate          # Windows
-# source .venv/bin/activate     # Linux/Mac
+.venv\Scripts\activate                        # Windows
+# source .venv/bin/activate                  # Linux/Mac
 pip install -r requirements.txt
+# SAM3 must be installed as editable from local clone:
+pip install -e C:\Users\OSMAN\sam3            # Windows — adjust path
+# pip install -e /path/to/sam3               # Linux/Mac
 uvicorn backend.main:app --reload --port 8000
 ```
 > Set `MODEL_PATH` in `backend/.env` to point to your YOLO weights.
+> Set `GROQ_API_KEY` and `ANTHROPIC_API_KEY` in `backend/.env` for LLM coaching.
 
 ### Frontend (from project root)
 ```bash
@@ -78,9 +121,12 @@ streamlit run app/streamlit_app.py
 - Backend model path configurable via `MODEL_PATH` env var.
 
 ## Constraints
-- No fake parity: karting and surf remain shells until their engines exist.
+- No fake parity: surf remains a shell until its engine exists.
 - Colors: oklch-based, sober (amber DH / blue KT / teal SF) — no neon.
 - Do not import Streamlit in the backend; only import from `streamlit/src/`.
+- numpy must stay at 1.26.x — SAM3 breaks on numpy 2.x.
+- VLM (image inference) is on-demand only, never automatic. LLM (text-only metrics) runs automatically at pipeline end.
+- SAM3 local clone path (`C:\Users\OSMAN\sam3`) is machine-specific — document path when moving to a new machine.
 
 ## Working Directory Rule
 **Always edit files in their actual project paths** — never in `.claude/worktrees/`.
