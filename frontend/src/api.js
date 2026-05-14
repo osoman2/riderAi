@@ -17,8 +17,10 @@ export async function analyzeSession(videoFile, sport, opts = {}) {
   const formData = new FormData();
   formData.append('video', videoFile);
   formData.append('sport', sport);
-  if (opts.mode) formData.append('mode', opts.mode);
+  if (opts.mode)   formData.append('mode', opts.mode);
+  if (opts.tier)   formData.append('tier', opts.tier);
   if (opts.prompt) formData.append('prompt', opts.prompt);
+  if (opts.everyN) formData.append('every_n', String(opts.everyN));
   if (opts.useGroq) formData.append('use_groq', 'true');
   if (opts.groqApiKey) formData.append('groq_api_key', opts.groqApiKey);
   if (opts.groqModel) formData.append('groq_model', opts.groqModel);

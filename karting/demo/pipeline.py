@@ -11,6 +11,7 @@ import base64
 import argparse
 from pathlib import Path
 
+import contextlib
 import cv2
 import numpy as np
 from scipy.interpolate import splprep, splev
@@ -22,6 +23,8 @@ from ultralytics import YOLO
 ASSETS_DIR = Path(__file__).parent.parent / "assets"
 OUTPUT_DIR = Path(__file__).parent.parent / "outputs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+REPO_ROOT = Path(__file__).resolve().parents[2]
+MODELS_DIR = REPO_ROOT / "models"
 
 VEHICLE_CLASSES = {2, 3, 5, 7}   # car, motorcycle, bus, truck — karts match these
 TRACK_COLOR = (50, 200, 50)       # green overlay for track mask
@@ -31,6 +34,23 @@ TRAIL_COLORS = [
 ]
 IDEAL_LINE_COLOR = (0, 255, 0)
 ACTUAL_LINE_COLOR = (0, 80, 255)
+
+
+def _model_path(env_name: str, candidates: list[str]) -> str:
+    """
+    Resolve model checkpoints from the repo-level models/ directory.
+    Environment overrides are allowed, but relative overrides are also resolved
+    under models/ so local runs stay portable.
+    """
+    override = os.environ.get(env_name)
+    if override:
+        path = Path(override)
+        return str(path if path.is_absolute() else MODELS_DIR / path)
+    for name in candidates:
+        path = MODELS_DIR / name
+        if path.exists():
+            return str(path)
+    return str(MODELS_DIR / candidates[0])
 
 
 # ---------------------------------------------------------------------------
@@ -111,163 +131,121 @@ def extract_frames(video_path: str, every_n: int = 1, max_frames: int = 900, ski
 def _sam2_cfg_and_ckpt():
     import sam2 as _sam2_pkg
     cfg = str(Path(_sam2_pkg.__file__).parent / "configs" / "sam2.1" / "sam2.1_hiera_l.yaml")
-    ckpt = str(Path.home() / ".sam2" / "sam2_hiera_large.pt")
+    ckpt = _model_path("SAM2_CKPT", ["sam2_hiera_large.pt", "sam2.1_hiera_large.pt", "sam2.1_hiera_l.pt"])
     return cfg, ckpt
 
 
-def segment_track_sam3_video(frames: list[np.ndarray], mode: str = "fpv_follow", prompt: str | None = None) -> list[np.ndarray] | None:
+def segment_track_sam3_video(frames: list[np.ndarray], mode: str = "fpv_follow",
+                             prompt: str | None = None, chunk_size: int = 40) -> list[np.ndarray] | None:
     """
-    SAM3-calibrated HSV hybrid — best of both worlds:
-      1. SAM3 text prompt on ONE carefully-chosen frame → precise semantic mask
-      2. Sample HSV from that mask → calibrated color model
-      3. Apply HSV to all frames (fast, same as SAM2 hybrid)
+    SAM3 chunked video propagation — no HSV calibration.
+    Splits the video into chunks of `chunk_size` frames, runs SAM3 video predictor
+    on each chunk with a text prompt on frame 0, and collects the propagated masks.
+    The predictor is loaded once and reused across chunks; offload flags keep VRAM bounded.
 
-    This is 10-50× faster than full SAM3 video propagation, keeps the key advantage
-    (text prompt = no coordinate fragility), and handles dark frames / pit lanes.
-
-    Returns list of masks or None if SAM3 unavailable (falls back to SAM2).
-
-    Install:
-        conda create -n sam3 python=3.12
-        pip install torch==2.10.0 torchvision xformers --index-url https://download.pytorch.org/whl/cu128
-        git clone https://github.com/facebookresearch/sam3 && cd sam3 && pip install -e .
-        hf auth login
-        huggingface-cli download facebook/sam3.1 --local-dir ~/.sam3
+    Returns list of H×W uint8 masks (255 = track) or None if SAM3 unavailable.
     """
     try:
         import torch
-        from sam3.model_builder import build_sam3_predictor
+        from sam3.model_builder import build_sam3_multiplex_video_predictor
         from PIL import Image as _PILImage
     except ImportError as _ie:
         print(f"[SAM3] Not available in this Python env ({_ie}) — falling back to SAM2")
         return None
 
     h, w = frames[0].shape[:2]
-    road_y2 = int(h * 0.45) if mode == "action_cam" else h
+    road_y2  = int(h * 0.45) if mode == "action_cam" else h
     sky_clip = max(0, int(h * 0.05))
 
-    # Use custom prompt if provided, otherwise fall back to sensible defaults per mode
-    if prompt:
-        text_prompt = prompt
-    elif mode == "action_cam":
-        text_prompt = "asphalt road karting track surface"
-    else:
-        text_prompt = "asphalt racing circuit track road surface"
-    print(f"      SAM3 text prompt: \"{text_prompt}\"")
+    text_prompt = prompt or ("karting track asphalt surface road" if mode == "action_cam"
+                             else "asphalt racing circuit track road surface")
 
     try:
-        ckpt_path = Path.home() / ".sam3" / "sam3.1_multiplex.pt"
+        ckpt_path = Path(_model_path("SAM3_CKPT", ["sam3.1_multiplex.pt", "sam3_multiplex.pt"]))
         if not ckpt_path.exists():
-            print("[SAM3] ~/.sam3/sam3.1_multiplex.pt not found — falling back to SAM2")
+            print("[SAM3] checkpoint not found — falling back to SAM2")
             return None
 
-        # ── Step 1: pick best calibration frame (moderately bright, not dark/overexposed)
-        road_y_top = int(h * 0.08)
-        prompt_idx = 0
-        best_score = -1.0
-        for fi, f in enumerate(frames[: min(len(frames), 20)]):
-            gm = float(cv2.cvtColor(f[road_y_top:road_y2, :], cv2.COLOR_BGR2GRAY).mean())
-            score = gm if 40 < gm < 200 else 0.0
-            if score > best_score:
-                best_score, prompt_idx = score, fi
-        print(f"      SAM3 calibration frame: {prompt_idx} (road brightness={best_score:.0f})")
-
-        # ── Step 2: SAM3 image-mode on that single frame (fast, no video propagation)
+        n_chunks = (len(frames) + chunk_size - 1) // chunk_size
+        print(f"      SAM3 video propagation: {len(frames)} frames → {n_chunks} chunks of {chunk_size}")
+        print(f"      Prompt: \"{text_prompt}\"")
         print(f"      Loading SAM3.1 ...")
-        predictor = build_sam3_predictor(
-            checkpoint_path=str(ckpt_path),
-            version="sam3.1",
-            use_fa3=False,
-            use_rope_real=True,
-            async_loading_frames=False,
-        )
-        pil_ref = _PILImage.fromarray(cv2.cvtColor(frames[prompt_idx], cv2.COLOR_BGR2RGB))
+        import logging, warnings
+        logging.getLogger("sam3").setLevel(logging.ERROR)
+        for name, logger in logging.Logger.manager.loggerDict.items():
+            if "sam3" in name.lower():
+                logging.getLogger(name).setLevel(logging.ERROR)
 
-        with torch.inference_mode():
-            resp = predictor.handle_request(
-                {"type": "start_session", "resource_path": [pil_ref]}
+        def _vram(label):
+            if torch.cuda.is_available():
+                a = torch.cuda.memory_allocated() / 1e9
+                r = torch.cuda.memory_reserved()  / 1e9
+                print(f"      VRAM [{label}]: {a:.2f}GB allocated / {r:.2f}GB reserved")
+
+        import sys, io
+        _vram("before load")
+        with warnings.catch_warnings(), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            warnings.simplefilter("ignore")
+            predictor = build_sam3_multiplex_video_predictor(
+                checkpoint_path=str(ckpt_path),
+                use_fa3=False,
+                use_rope_real=True,
+                async_loading_frames=False,
             )
-            sid = resp["session_id"]
-            add_resp = predictor.handle_request({
-                "type": "add_prompt",
-                "session_id": sid,
-                "frame_index": 0,
-                "text": text_prompt,
-            })
-            predictor.handle_request({"type": "close_session", "session_id": sid})
+        _vram("model loaded")
 
-        # Extract mask from add_prompt response
-        outputs = add_resp.get("outputs", add_resp) if isinstance(add_resp, dict) else {}
-        ref_mask_raw = outputs.get("out_binary_masks")
-        if ref_mask_raw is None or not np.array(ref_mask_raw).any():
-            print("[SAM3] No mask on calibration frame — falling back to SAM2")
-            return None
+        all_masks: list[np.ndarray] = []
 
-        ref_mask = (np.array(ref_mask_raw).any(axis=0)).astype(np.uint8) * 255
-        ref_mask[road_y2:, :] = 0   # clip cockpit area
+        for ci in range(n_chunks):
+            chunk = frames[ci * chunk_size: (ci + 1) * chunk_size]
+            pil_chunk = [_PILImage.fromarray(cv2.cvtColor(f, cv2.COLOR_BGR2RGB)) for f in chunk]
 
-        # ── Step 3: calibrate HSV from mask pixels (same logic as SAM2 hybrid)
-        road_mask = ref_mask.copy()
-        hsv0 = cv2.cvtColor(frames[prompt_idx], cv2.COLOR_BGR2HSV)
-        track_pixels = hsv0[road_mask > 0]
-        if len(track_pixels) < 100:
-            print(f"[SAM3] Calibration mask too small ({len(track_pixels)} px) — falling back")
-            return None
+            with torch.inference_mode():
+                resp = predictor.handle_request({
+                    "type": "start_session",
+                    "resource_path": pil_chunk,
+                    "offload_video_to_cpu": True,
+                    "offload_state_to_cpu": True,
+                })
+                sid = resp["session_id"]
+                if ci == 0:
+                    _vram(f"chunk 0 session start")
 
-        hue = track_pixels[:, 0].astype(int)
-        sat = track_pixels[:, 1].astype(int)
-        green_ratio = float(np.mean((hue >= 28) & (hue <= 92) & (sat >= 40)))
-        if green_ratio > 0.25:
-            print(f"[SAM3] Mask landed on grass ({green_ratio:.0%}) — falling back to SAM2")
-            return None
-        mean_sat = float(np.mean(sat))
-        if mode == "action_cam" and mean_sat > 60:
-            print(f"[SAM3] Mask saturation too high ({mean_sat:.0f}) — falling back")
-            return None
+                predictor.handle_request({
+                    "type": "add_prompt",
+                    "session_id": sid,
+                    "frame_index": 0,
+                    "text": text_prompt,
+                })
 
-        lo = np.clip(np.percentile(track_pixels, 5, axis=0).astype(int)  - [8, 12, 20], 0, 255).astype(np.uint8)
-        hi = np.clip(np.percentile(track_pixels, 95, axis=0).astype(int) + [8, 12, 20], 0, 255).astype(np.uint8)
-        if mode == "action_cam":
-            hi[1] = min(int(hi[1]), 70)
-        print(f"      SAM3 HSV [{mode}]: {lo} → {hi}  (green={green_ratio:.0%}, sat={mean_sat:.0f})")
+                chunk_masks: dict[int, np.ndarray] = {}
+                for item in predictor.handle_stream_request({
+                    "type": "propagate_in_video",
+                    "session_id": sid,
+                }):
+                    fi     = item["frame_index"]
+                    binary = item["outputs"]["out_binary_masks"]
+                    mask   = (np.array(binary).any(axis=0)).astype(np.uint8) * 255
+                    mask[road_y2:, :] = 0
+                    mask[:sky_clip, :] = 0
+                    chunk_masks[fi] = mask
 
-        # ── Step 4: apply calibrated HSV to all frames (fast)
-        masks = []
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (18, 18))
-        min_comp_area = int(road_y2 * w * 0.01)
-        for frame in frames:
-            hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-            m = cv2.inRange(hsv, lo, hi)
-            m[road_y2:, :] = 0
-            m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, kernel)
-            m = cv2.morphologyEx(m, cv2.MORPH_OPEN,  kernel)
-            clean = np.zeros_like(m)
-            if m.any():
-                num_l, lbls = cv2.connectedComponents(m)
-                bottom = lbls[int(road_y2 * 0.92):road_y2, :]
-                vals = bottom[bottom > 0]
-                if len(vals) == 0:
-                    best_lbls = {max(range(1, num_l), key=lambda l: int((lbls == l).sum()), default=0)}
-                else:
-                    counts = np.bincount(vals)
-                    best_lbls = {int(lbl) for lbl in range(1, len(counts)) if counts[lbl] >= 5}
-                rl = np.zeros(m.shape, dtype=np.uint8)
-                for lbl in best_lbls:
-                    if lbl == 0: continue
-                    comp = (lbls == lbl).astype(np.uint8)
-                    if comp.sum() >= min_comp_area:
-                        rl = cv2.bitwise_or(rl, comp)
-                if rl.any():
-                    ctrs, _ = cv2.findContours(rl, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                    cv2.drawContours(clean, ctrs, -1, 255, -1)
-                    clean[:sky_clip, :] = 0
-            masks.append(clean)
+                predictor.handle_request({"type": "close_session", "session_id": sid})
+                if ci == 0:
+                    _vram("chunk 0 after close")
 
-        print(f"      SAM3-calibrated HSV: {len(masks)} masks")
-        return masks
+            empty = np.zeros((h, w), dtype=np.uint8)
+            for fi in range(len(chunk)):
+                all_masks.append(chunk_masks.get(fi, empty))
+
+            print(f"      Chunk {ci + 1}/{n_chunks} done ({len(chunk_masks)}/{len(chunk)} masks)")
+
+        print(f"      SAM3 video propagation complete: {len(all_masks)} masks")
+        return all_masks if all_masks else None
 
     except Exception as e:
         print(f"[SAM3] {e} — falling back to SAM2")
+        import traceback; traceback.print_exc()
         return None
 
 
@@ -547,7 +525,7 @@ def detect_kerb_contact(frame: np.ndarray, road_y2: int) -> tuple[bool, bool]:
 # ---------------------------------------------------------------------------
 # Step 3 — YOLO + ByteTrack kart detection & tracking
 # ---------------------------------------------------------------------------
-_KART_YOLO_MODEL = os.environ.get("KART_YOLO_MODEL", "yolo11n.pt")
+_KART_YOLO_MODEL = _model_path("KART_YOLO_MODEL", ["yolo11n.pt"])
 
 
 def track_karts(frames: list[np.ndarray], conf: float = 0.25, mode: str = "action_cam") -> list[dict]:
@@ -839,10 +817,9 @@ def _detect_front_tires(frame, h, w):
 def annotate_frame_action(frame, detections, track_history, mask, frame_idx,
                            prev_gray=None):
     """
-    Action cam (GoPro helmet/kart): focus on track mapping, racing line, tires.
+    Action cam (GoPro helmet/kart): focus on track mapping and racing line.
     No kart bboxes — they add noise from this POV.
-    Adds: vanishing point (apex direction), track centerline, tire markers,
-    kerb detection, GAP bar (from bbox area, drawn minimally), optical flow speed.
+    Adds: vanishing point (apex direction), kerb detection and GAP bar.
     """
     out = frame.copy()
     h, w = out.shape[:2]
@@ -883,10 +860,7 @@ def annotate_frame_action(frame, detections, track_history, mask, frame_idx,
         cv2.putText(out, apex_label, (vp[0] - 50, vp[1] - 14),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 220, 100), 1, cv2.LINE_AA)
 
-    # ── 3. Front tire markers — disabled (helmet-mount cameras don't show tires)
-    # tires = _detect_front_tires(frame, h, w)  # enable when using front-bodywork mount
-
-    # ── 4. Kerb detection — red-only, classified by horizontal position ─────────
+    # ── 3. Kerb detection — red-only, classified by horizontal position ─────────
     road_h = int(h * 0.42)
     kerb_left, kerb_right = detect_kerb_contact(frame, road_h)
     if kerb_left:
@@ -894,7 +868,7 @@ def annotate_frame_action(frame, detections, track_history, mask, frame_idx,
     if kerb_right:
         cv2.putText(out, "KERB R", (w - 88, h // 2), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 220, 180), 2, cv2.LINE_AA)
 
-    # ── 5. GAP bar (kart ahead proximity — bbox area only, no box drawn) ───────
+    # ── 4. GAP bar (kart ahead proximity — bbox area only, no box drawn) ───────
     if detections:
         closest = max(detections.values(), key=lambda d: (d[3] - d[1]) * (d[2] - d[0]))
         _, _, x1c, y1c, x2c, y2c = closest[:6]
@@ -1117,8 +1091,8 @@ def _downsample(data: list, max_pts: int) -> list:
 # Main
 # ---------------------------------------------------------------------------
 def run(video_path: str, every_n: int = 2, max_frames: int = 300, coaching: bool = True,
-        skip_seconds: float = 0, mode: str = "fpv_follow", prompt: str | None = None,
-        out_name: str = "karting_demo", output_dir: str | None = None):
+        skip_seconds: float = 0, mode: str = "fpv_follow", tier: str = "premium",
+        prompt: str | None = None, out_name: str = "karting_demo", output_dir: str | None = None):
     """
     mode: 'fpv_follow'  — drone chasing one kart. Keeps single dominant detection per frame.
           'action_cam'  — GoPro/helmet cam. Keeps all karts visible ahead.
@@ -1144,8 +1118,7 @@ def run(video_path: str, every_n: int = 2, max_frames: int = 300, coaching: bool
     frames = extract_frames(video_path, every_n=every_n, max_frames=max_frames, skip_seconds=effective_skip)
     print(f"      {len(frames)} frames extracted (skip={effective_skip:.1f}s)")
 
-    # SAM2 Video: propagate track mask through all frames
-    print("[2/6] Segmenting track — SAM2 Video (GPU propagation)...")
+    # Track segmentation — tier determines engine (SAM3 premium / SAM2 basic)
     h, w = frames[0].shape[:2]
     # Prompt points differ by mode:
     # action_cam: road ahead is visible in UPPER portion of frame (above driver/wheel).
@@ -1166,11 +1139,27 @@ def run(video_path: str, every_n: int = 2, max_frames: int = 300, coaching: bool
             (int(w * 0.35), int(h * 0.75)),
             (int(w * 0.65), int(h * 0.75)),
         ]
-    # Try SAM3 (text-prompt, no coordinate fragility) → fall back to SAM2 if unavailable
-    print("[2/6] Segmenting track — trying SAM3 text-prompt first...")
-    all_masks = segment_track_sam3_video(frames, mode=mode, prompt=prompt)
-    if all_masks is None:
-        print("      SAM3 unavailable — using SAM2 Video (GPU propagation)...")
+    # Tier-gated segmentation:
+    #   fast    → pure HSV color filter (no AI, instant)
+    #   basic   → SAM2 coordinate-prompt + HSV calibration
+    #   premium → SAM3 text-prompt + HSV calibration (CUDA required, SAM2 fallback)
+    h_f, w_f = frames[0].shape[:2]
+    road_y2_f = int(h_f * 0.45) if mode == "action_cam" else h_f
+    if tier == "fast":
+        print("[2/6] Segmenting track — HSV color filter (fast)...")
+        if mode == "action_cam":
+            all_masks = [_segment_asphalt_action(f, road_y2_f) for f in frames]
+        else:
+            all_masks = [_color_segment_track(f) for f in frames]
+        print(f"      Fast HSV: {len(all_masks)} masks")
+    elif tier == "premium":
+        print("[2/6] Segmenting track — SAM3 text-prompt (premium)...")
+        all_masks = segment_track_sam3_video(frames, mode=mode, prompt=prompt)
+        if all_masks is None:
+            print("      SAM3 unavailable — falling back to SAM2...")
+            all_masks = segment_track_sam2_video(frames, track_pts, mode=mode)
+    else:
+        print("[2/6] Segmenting track — SAM2 coordinate-prompt (basic)...")
         all_masks = segment_track_sam2_video(frames, track_pts, mode=mode)
     cv2.imwrite(str(out_root / "track_mask.png"), all_masks[0])
     print(f"      Mask saved → {out_root}/track_mask.png")

@@ -1,0 +1,9 @@
+{
+  "_note": "Placeholder — replace with real pipeline output. Copy dh_annotated.mp4 to this folder.",
+  "sport": "downhill",
+  "date": null,
+  "frames_analyzed": null,
+  "model": "YOLO11n-pose",
+  "avg_balance_score": null,
+  "avg_line_efficiency_score": null
+}

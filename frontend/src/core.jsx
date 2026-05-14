@@ -27,10 +27,10 @@ export const SPORTS = {
     colorHex: '#1fa84a',
     readiness: 'beta',
     capabilities: [
-      { id: 'segment', label: { en: 'Route Segmentation', es: 'Segmentación de Ruta' }, live: false },
-      { id: 'brake', label: { en: 'Brake Score', es: 'Puntuación de Freno' }, live: false },
-      { id: 'turn', label: { en: 'Turn Score', es: 'Puntuación de Giro' }, live: false },
-      { id: 'line_rec', label: { en: 'Line Recommendation', es: 'Recomendación de Línea' }, live: false },
+      { id: 'segment',  label: { en: 'Track Segmentation', es: 'Segmentación de Pista' }, live: true },
+      { id: 'lat_pos',  label: { en: 'Lateral Position',   es: 'Posición Lateral' },      live: true },
+      { id: 'consist',  label: { en: 'Line Consistency',   es: 'Consistencia de Línea' }, live: true },
+      { id: 'coaching', label: { en: 'LLM Coaching',       es: 'Coaching LLM' },          live: true },
     ],
   },
   surf: {
@@ -166,16 +166,17 @@ export function MiniChart({ data, color, gradId, height = 52 }) {
 export function Nav({ state, setState }) {
   const { sport, page, lang, demo, backendOnline } = state;
   const sc = SPORTS[sport];
+  const showSportPills = page !== 'method';
 
   const pages = [
     { id: 'overview', en: 'Overview',  es: 'Vista General' },
     { id: 'analyze',  en: 'Analyze',   es: 'Analizar' },
-    { id: 'live',     en: 'Live',      es: 'En Vivo', accent: true },
+    { id: 'demos',    en: 'Demos',     es: 'Demos' },
     { id: 'sessions', en: 'Sessions',  es: 'Sesiones' },
     { id: 'method',   en: 'Method',    es: 'Método' },
   ];
 
-  const navPage = ['overview', 'analyze', 'live', 'sessions', 'method'].includes(page) ? page : null;
+  const navPage = ['overview', 'analyze', 'demos', 'sessions', 'method'].includes(page) ? page : null;
 
   return (
     <nav style={{
@@ -248,24 +249,26 @@ export function Nav({ state, setState }) {
         </span>
 
         {/* Sport pills */}
-        <div style={{ display: 'flex', gap: 3 }}>
-          {Object.values(SPORTS).map(s => (
-            <button key={s.id}
-              onClick={() => setState(st => ({ ...st, sport: s.id }))}
-              title={tl(s.label, lang)}
-              style={{
-                width: 34, height: 24, borderRadius: 4,
-                border: `1px solid ${sport === s.id ? s.color : '#222'}`,
-                background: sport === s.id ? s.colorHex + '22' : 'transparent',
-                color: sport === s.id ? s.color : '#555',
-                fontFamily: 'Space Mono, monospace', fontSize: 9,
-                cursor: 'pointer', transition: 'all 0.2s',
-                letterSpacing: '0.04em',
-              }}>
-              {s.abbr}
-            </button>
-          ))}
-        </div>
+        {showSportPills && (
+          <div style={{ display: 'flex', gap: 3 }}>
+            {Object.values(SPORTS).map(s => (
+              <button key={s.id}
+                onClick={() => setState(st => ({ ...st, sport: s.id }))}
+                title={tl(s.label, lang)}
+                style={{
+                  width: 34, height: 24, borderRadius: 4,
+                  border: `1px solid ${sport === s.id ? s.color : '#222'}`,
+                  background: sport === s.id ? s.colorHex + '22' : 'transparent',
+                  color: sport === s.id ? s.color : '#555',
+                  fontFamily: 'Space Mono, monospace', fontSize: 9,
+                  cursor: 'pointer', transition: 'all 0.2s',
+                  letterSpacing: '0.04em',
+                }}>
+                {s.abbr}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Lang */}
         <div style={{ display: 'flex', gap: 2 }}>

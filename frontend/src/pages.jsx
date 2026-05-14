@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { SPORTS, READINESS, tl, StatusPill, CapChip, ScoreRing, MiniChart } from './core.jsx';
 import { analyzeSession, listSessions, deleteSession, checkHealth } from './api.js';
 
@@ -209,7 +209,7 @@ export function OverviewPage({ state, setState }) {
           <HeroCanvas colorHex={SPORTS[sport].colorHex} />
           <div style={{ position: 'relative', zIndex: 1 }}>
             <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#6b6b6b', letterSpacing: '0.14em', marginBottom: 20 }}>
-              SPORTOTIMIZATION — v2.0 / MULTI-SPORT FOUNDATION
+              DRIVER FEEDBACK — VIDEO TO NEXT ACTION
             </div>
             <h1 style={{
               fontFamily: 'Space Grotesk, sans-serif',
@@ -217,15 +217,15 @@ export function OverviewPage({ state, setState }) {
               fontWeight: 700, color: '#EDEDE8',
               margin: '0 0 12px', lineHeight: 1.08, letterSpacing: '-0.02em',
             }}>
-              {lang === 'es' ? 'Sube una sesión.' : 'Upload a session.'}<br />
+              {lang === 'es' ? 'Sube tu sesión.' : 'Upload your session.'}<br />
               <span style={{ color: '#3a3a3a' }}>
-                {lang === 'es' ? 'Recibe el siguiente paso.' : 'Get the next step.'}
+                {lang === 'es' ? 'Sal con 3 cosas que mejorar.' : 'Leave with 3 things to improve.'}
               </span>
             </h1>
             <p style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 16, color: '#6b6b6b', maxWidth: 460, lineHeight: 1.65, margin: '0 0 28px' }}>
               {lang === 'es'
-                ? 'Análisis de rendimiento multideporte. Un sistema, adaptadores por deporte, capacidades declaradas.'
-                : 'Multi-sport performance analysis. One system, sport-specific adapters, declared capabilities.'}
+                ? 'Para riders y pilotos: revisa postura, línea, uso de pista/sendero y momentos clave sin perderte en métricas vacías.'
+                : 'For riders and drivers: review posture, line choice, track/trail use and key moments without drowning in empty metrics.'}
             </p>
             <div style={{ display: 'flex', gap: 10 }}>
               <button
@@ -241,7 +241,7 @@ export function OverviewPage({ state, setState }) {
                 {lang === 'es' ? 'Analizar sesión →' : 'Analyze session →'}
               </button>
               <button
-                onClick={() => setState(s => ({ ...s, page: 'sessions' }))}
+                onClick={() => setState(s => ({ ...s, page: 'demos' }))}
                 style={{
                   background: 'none', border: '1px solid #22222270', borderRadius: 6,
                   padding: '11px 22px', cursor: 'pointer',
@@ -250,7 +250,7 @@ export function OverviewPage({ state, setState }) {
                 }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = '#555'; e.currentTarget.style.color = '#EDEDE8'; }}
                 onMouseLeave={e => { e.currentTarget.style.borderColor = '#22222270'; e.currentTarget.style.color = '#6b6b6b'; }}>
-                {lang === 'es' ? 'Ver sesiones' : 'View sessions'}
+                {lang === 'es' ? 'Ver demos' : 'View demos'}
               </button>
             </div>
             <LiveSignal sport={sport} lang={lang} colorHex={SPORTS[sport].colorHex} />
@@ -292,19 +292,21 @@ export function OverviewPage({ state, setState }) {
           ))}
         </div>
 
-        {/* Shared model strip */}
+        {/* Athlete value strip */}
         <div style={{
           padding: '18px 22px', border: '1px solid #222', borderRadius: 8,
           background: '#0f0f0f', display: 'flex', gap: 32, alignItems: 'center', flexWrap: 'wrap',
         }}>
-          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#6b6b6b', letterSpacing: '0.1em', flexShrink: 0 }}>
-            {lang === 'es' ? 'MODELO COMPARTIDO' : 'SHARED SESSION MODEL'}
+          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#9a9a9a', letterSpacing: '0.1em', flexShrink: 0 }}>
+            {lang === 'es' ? 'LO QUE RECIBES' : 'WHAT YOU GET'}
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {['session_id', 'sport', 'capabilities[]', 'artifacts[]', 'readiness_state'].map(k => (
+            {(lang === 'es'
+              ? ['video anotado', 'momentos clave', 'scores simples', 'siguiente práctica']
+              : ['annotated video', 'key moments', 'simple scores', 'next practice']).map(k => (
               <span key={k} style={{
                 fontFamily: 'Space Mono, monospace', fontSize: 10,
-                color: '#555', background: '#161616',
+                color: '#aaa', background: '#161616',
                 border: '1px solid #222', borderRadius: 4, padding: '3px 9px',
               }}>{k}</span>
             ))}
@@ -326,10 +328,10 @@ const CAMERA_MODES = {
       label: { en: 'FPV / Follow Drone', es: 'Drone FPV / Seguimiento' },
       icon: '🚁',
       desc: {
-        en: 'Drone follows rider from above or behind. Full body visible — enables pose estimation, terrain segmentation, and line consistency scoring.',
-        es: 'Drone sigue al rider desde arriba o atrás. Cuerpo completo visible — habilita estimación de pose, segmentación de terreno y scoring de línea.',
+        en: 'Drone follows rider from above/behind. Best DH view for posture + trail line: body is visible and the riding corridor can be reviewed.',
+        es: 'Drone sigue al rider desde arriba/atrás. Mejor vista DH para postura + línea: se ve el cuerpo y se puede revisar el corredor del sendero.',
       },
-      outputs: ['POSE EST.', 'LINE', 'TERRAIN SEG.'],
+      outputs: ['POSTURA', 'SENDERO', 'LÍNEA'],
       available: true,
       color: '#f59e0b',
     },
@@ -338,12 +340,24 @@ const CAMERA_MODES = {
       label: { en: 'Helmet / Body Cam', es: 'Cámara de Casco / Cuerpo' },
       icon: '⛑️',
       desc: {
-        en: 'First-person view from helmet or chest mount. Terrain segmentation and upcoming line preview. Limited pose data (upper body only).',
-        es: 'Vista en primera persona desde casco o pecho. Segmentación de terreno y previsualización de línea. Datos de pose limitados (parte superior).',
+        en: 'First-person GoPro view. Good for trail ahead, obstacles and line preview. Full-body posture is mostly not observable.',
+        es: 'Vista GoPro en primera persona. Buena para sendero adelante, obstáculos y previsualización de línea. La pose completa casi no es observable.',
       },
-      outputs: ['TERRAIN SEG.', 'LINE PREVIEW'],
-      available: false,
-      comingSoon: true,
+      outputs: ['SENDERO', 'OBSTÁCULOS', 'LÍNEA'],
+      available: true,
+      color: '#f59e0b',
+    },
+    {
+      id: 'drone_front_overhead',
+      label: { en: 'Front / Overhead Drone', es: 'Drone Frontal / Cenital' },
+      icon: '🛸',
+      desc: {
+        en: 'Front-facing or top-down drone. Keep separate from follow drone: stronger for trajectory/map geometry, weaker for posture detail.',
+        es: 'Drone frontal o cenital. Mejor separado del seguimiento: fuerte para trayectoria/geometría de mapa, más débil para detalle postural.',
+      },
+      outputs: ['TRAYECTORIA', 'SENDERO', 'SECCIONES'],
+      available: true,
+      experimental: true,
       color: '#f59e0b',
     },
     {
@@ -351,10 +365,10 @@ const CAMERA_MODES = {
       label: { en: 'Static Cam / Tripod', es: 'Cámara Fija / Trípode' },
       icon: '🎥',
       desc: {
-        en: 'Fixed camera covering a specific corner or section. Optimal for full-body pose analysis and split timing. Limited terrain coverage.',
-        es: 'Cámara fija en un sector o curva específica. Óptima para análisis de pose de cuerpo completo y tiempos parciales. Cobertura de terreno limitada.',
+        en: 'Fixed camera covering one feature or corner. Useful for repeated checkpoint analysis; not a full-run line model.',
+        es: 'Cámara fija en un obstáculo o curva. Útil para análisis repetido de checkpoint; no modela toda la bajada.',
       },
-      outputs: ['POSE EST.', 'SPLIT TIMING'],
+      outputs: ['POSTURA', 'CHECKPOINT'],
       available: false,
       comingSoon: true,
       color: '#f59e0b',
@@ -366,10 +380,10 @@ const CAMERA_MODES = {
       label: { en: 'FPV / Follow Drone', es: 'Drone FPV / Seguimiento' },
       icon: '🚁',
       desc: {
-        en: 'Drone follows kart from above or behind. Detects all karts, segments track with SAM3 text-prompt, measures lateral position and line consistency.',
-        es: 'Drone sigue al kart desde arriba o atrás. Detecta todos los karts, segmenta la pista con SAM3, mide posición lateral y consistencia de línea.',
+        en: 'Drone follows kart from above/behind. Best for kart detection, track area, lateral position and line consistency. Human pose is not useful here.',
+        es: 'Drone sigue al kart desde arriba/atrás. Mejor para detectar kart, zona de pista, posición lateral y consistencia. La pose humana no aporta mucho.',
       },
-      outputs: ['LAT POS', 'CONSIST.', 'EDGE USE', 'SAM3 overlay'],
+      outputs: ['LÍNEA', 'ANCHO', 'KARTS'],
       available: true,
       color: '#1fa84a',
     },
@@ -378,10 +392,10 @@ const CAMERA_MODES = {
       label: { en: 'GoPro / Action Cam', es: 'GoPro / Cámara de Acción' },
       icon: '📷',
       desc: {
-        en: 'Helmet or kart-mounted first-person camera. Measures gap to kart ahead, detects kerb contact left/right, tracks all visible karts via ByteTrack.',
-        es: 'Cámara en primera persona en casco o kart. Mide brecha al kart adelante, detecta contacto con kerb izq/der, trackea karts visibles con ByteTrack.',
+        en: 'Helmet/kart first-person view. Good for track ahead, kerbs and gap to visible karts. Own-kart position is inferred from view geometry.',
+        es: 'Vista primera persona desde casco/kart. Buena para pista adelante, kerbs y gap a karts visibles. La posición propia se infiere por geometría de vista.',
       },
-      outputs: ['GAP BAR', 'KERB L/R', 'ByteTrack IDs'],
+      outputs: ['PISTA', 'GAP', 'KERB L/R'],
       available: true,
       color: '#22d3ee',
     },
@@ -390,10 +404,10 @@ const CAMERA_MODES = {
       label: { en: 'Overhead / Cenital Drone', es: 'Drone Cenital / Overhead' },
       icon: '🛸',
       desc: {
-        en: 'Top-down drone view of the full circuit or sector. Full lap trajectory, overtaking patterns, sector comparison between laps.',
-        es: 'Vista cenital del circuito completo o sector. Trayectoria de vuelta completa, patrones de adelantamiento, comparación de sectores entre vueltas.',
+        en: 'Top-down drone view of a circuit/sector. Best for trajectory geometry, multi-kart detection and sector comparison; less useful for driver POV gap.',
+        es: 'Vista cenital de circuito/sector. Mejor para geometría de trayectoria, detección multi-kart y comparación por sector; menos para gap subjetivo.',
       },
-      outputs: ['FULL LAP', 'OVERTAKE ZONES', 'SECTOR CMP'],
+      outputs: ['TRAZADA', 'SECTORES', 'KARTS'],
       available: false,
       comingSoon: true,
       color: '#8b5cf6',
@@ -447,6 +461,7 @@ const DEFAULT_PROMPTS = {
   downhill: {
     drone_follow: 'mountain bike dirt trail path downhill terrain surface',
     helmet_cam:   'mountain bike dirt trail path slope terrain ahead',
+    drone_front_overhead: 'mountain bike downhill trail corridor top view dirt path',
     static_tripod:'mountain bike trail dirt path terrain',
   },
   karting: {
@@ -461,6 +476,271 @@ const DEFAULT_PROMPTS = {
   },
 };
 
+const CAMERA_METHODOLOGY = {
+  downhill: {
+    drone_follow: {
+      title: { en: 'Posture and line, in context', es: 'Postura y línea, con contexto' },
+      current: {
+        en: 'You get body-position cues, balance moments and where the rider drifts from the chosen line.',
+        es: 'Recibes señales de posición corporal, momentos de balance y dónde el rider se sale de la línea elegida.',
+      },
+      next: {
+        en: 'Premium also tries to isolate the rideable trail corridor, so the line review has terrain context.',
+        es: 'Premium también intenta aislar el corredor transitable del sendero para que la revisión de línea tenga contexto real.',
+      },
+      athlete: { en: ['body position', 'line drift', 'commitment timing'], es: ['posición corporal', 'deriva de línea', 'momento de compromiso'] },
+    },
+    helmet_cam: {
+      title: { en: 'GoPro: what is coming next', es: 'GoPro: lo que viene adelante' },
+      current: {
+        en: 'You get a rider-facing review of visible trail, risk moments and line choices from the cockpit view.',
+        es: 'Recibes una revisión desde la vista del rider: sendero visible, momentos de riesgo y decisiones de línea.',
+      },
+      next: {
+        en: 'Premium focuses on trail surface and obstacles. Full-body posture is not scored because the body is mostly off camera.',
+        es: 'Premium se enfoca en superficie del sendero y obstáculos. No califica postura completa porque el cuerpo casi no aparece.',
+      },
+      athlete: { en: ['obstacles ahead', 'line preview', 'risk moments'], es: ['obstáculos adelante', 'línea próxima', 'momentos de riesgo'] },
+    },
+    drone_front_overhead: {
+      title: { en: 'Trajectory through the section', es: 'Trayectoria por la sección' },
+      current: {
+        en: 'You get a section-level view: entry, exit and how direct or costly the chosen path looks.',
+        es: 'Recibes una vista por sección: entrada, salida y qué tan directa o costosa se ve la trayectoria.',
+      },
+      next: {
+        en: 'Premium uses trail isolation for map geometry: corridor, sections and entry/exit choices.',
+        es: 'Premium usa aislamiento del sendero para geometría de mapa: corredor, secciones y decisiones de entrada/salida.',
+      },
+      athlete: { en: ['trajectory shape', 'section choice', 'entry/exit line'], es: ['forma de trayectoria', 'elección de sección', 'entrada/salida'] },
+    },
+    static_tripod: {
+      title: { en: 'Fixed cam: checkpoint repetition', es: 'Cámara fija: repetición de checkpoint' },
+      current: {
+        en: 'Useful when you repeat the same feature and want to compare entry, body timing and exit quality.',
+        es: 'Útil cuando repites el mismo obstáculo y quieres comparar entrada, timing corporal y calidad de salida.',
+      },
+      next: {
+        en: 'Best for checkpoint feedback, not for judging the complete descent from one angle.',
+        es: 'Mejor para feedback de checkpoint, no para juzgar toda la bajada desde un solo ángulo.',
+      },
+      athlete: { en: ['same feature repeat', 'body timing', 'exit quality'], es: ['repetición del obstáculo', 'timing corporal', 'calidad de salida'] },
+    },
+  },
+  karting: {
+    fpv_follow: {
+      title: { en: 'Drone: kart + track geometry', es: 'Dron: kart + geometría de pista' },
+      current: {
+        en: 'You get line consistency, track-width use and how disciplined the kart stays near edges and exits.',
+        es: 'Recibes consistencia de línea, uso del ancho de pista y qué tan disciplinado va el kart en bordes y salidas.',
+      },
+      next: {
+        en: 'The focus is kart and track behavior, not driver body pose.',
+        es: 'El foco es el comportamiento kart/pista, no la postura corporal del piloto.',
+      },
+      athlete: { en: ['line consistency', 'track width use', 'edge discipline'], es: ['consistencia de línea', 'uso del ancho', 'disciplina de borde'] },
+    },
+    action_cam: {
+      title: { en: 'GoPro: visible karts + kerbs', es: 'GoPro: karts visibles + kerbs' },
+      current: {
+        en: 'You get gap to visible karts, kerb use and line decisions from the driver view.',
+        es: 'Recibes gap a karts visibles, uso de kerb y decisiones de línea desde la vista del piloto.',
+      },
+      next: {
+        en: 'SAM isolates the track ahead, but own-kart position is still inferred from view geometry. Overhead drone is better for full race geometry.',
+        es: 'SAM aísla la pista adelante, pero la posición propia aún se infiere por geometría de vista. El dron cenital es mejor para geometría completa de carrera.',
+      },
+      athlete: { en: ['gap ahead', 'kerb use', 'driver POV decisions'], es: ['gap adelante', 'uso de kerb', 'decisiones POV'] },
+    },
+    overhead_drone: {
+      title: { en: 'Overhead: race geometry', es: 'Cenital: geometría de carrera' },
+      current: {
+        en: 'Best for comparing trajectories, sectors and overtaking zones across multiple karts.',
+        es: 'Mejor para comparar trayectorias, sectores y zonas de sobrepaso entre varios karts.',
+      },
+      next: {
+        en: 'Less personal than GoPro, stronger for race structure and line comparison.',
+        es: 'Menos personal que GoPro, más fuerte para estructura de carrera y comparación de trazadas.',
+      },
+      athlete: { en: ['sector comparison', 'overtake zones', 'race line'], es: ['comparación por sector', 'zonas de sobrepaso', 'línea de carrera'] },
+    },
+  },
+};
+
+function defaultReviewTier(sport, cameraMode) {
+  if (sport === 'karting') return 'premium';
+  if (sport === 'downhill' && cameraMode === 'helmet_cam') return 'premium';
+  if (sport === 'downhill' && cameraMode === 'drone_front_overhead') return 'premium';
+  return 'fast';
+}
+
+function reviewOptionsFor({ sport, cameraMode, sc, lang }) {
+  if (sport === 'downhill' && cameraMode === 'helmet_cam') {
+    return [
+      {
+        id: 'fast',
+        label: { en: 'POV Line Review', es: 'Revision POV de Linea' },
+        model: 'POV',
+        estimate: '~30-60s',
+        desc: {
+          en: 'Quick rider-view review: visible trail, line decisions and risk moments. No body-pose score because the full rider is not visible.',
+          es: 'Revision rapida desde la vista del rider: sendero visible, decisiones de linea y momentos de riesgo. Sin score de postura porque no se ve el cuerpo completo.',
+        },
+        tags: lang === 'es' ? ['linea', 'riesgo', 'sin pose'] : ['line', 'risk', 'no pose'],
+        color: sc.color,
+        available: true,
+      },
+      {
+        id: 'premium',
+        label: { en: 'Trail + Obstacles', es: 'Sendero + Obstaculos' },
+        model: 'SAM',
+        estimate: '~2-6 min',
+        desc: {
+          en: 'Uses SAM with a camera-specific preset prompt to isolate rideable trail, obstacles and the next line. This is the strongest GoPro DH mode.',
+          es: 'Usa SAM con prompt predefinido para esta camara: aisla sendero transitable, obstaculos y linea proxima. Es el modo GoPro DH mas fuerte.',
+        },
+        tags: lang === 'es' ? ['SAM3/SAM2', 'prompt fijo', 'sendero'] : ['SAM3/SAM2', 'preset prompt', 'trail'],
+        color: sc.color,
+        available: true,
+      },
+    ];
+  }
+
+  if (sport === 'downhill' && cameraMode === 'drone_front_overhead') {
+    return [
+      {
+        id: 'fast',
+        label: { en: 'Trajectory Review', es: 'Revision de Trayectoria' },
+        model: 'LINE',
+        estimate: '~45-90s',
+        desc: {
+          en: 'Reviews path, section choice and line stability from a front or overhead drone. Posture detail is secondary from this angle.',
+          es: 'Revisa trayectoria, eleccion de secciones y estabilidad de linea desde dron frontal o cenital. La postura es secundaria en este angulo.',
+        },
+        tags: lang === 'es' ? ['trayectoria', 'secciones', 'linea'] : ['trajectory', 'sections', 'line'],
+        color: sc.color,
+        available: true,
+      },
+      {
+        id: 'premium',
+        label: { en: 'Trail Geometry', es: 'Geometria del Sendero' },
+        model: 'SAM',
+        estimate: '~2-6 min',
+        desc: {
+          en: 'Adds SAM trail isolation to understand corridor width, obstacles and section geometry with more visual context.',
+          es: 'Agrega SAM para aislar sendero y entender ancho del corredor, obstaculos y geometria de secciones con mas contexto visual.',
+        },
+        tags: lang === 'es' ? ['SAM3/SAM2', 'corredor', 'secciones'] : ['SAM3/SAM2', 'corridor', 'sections'],
+        color: sc.color,
+        available: true,
+      },
+    ];
+  }
+
+  if (sport === 'downhill') {
+    return [
+      {
+        id: 'fast',
+        label: { en: 'Posture + Line', es: 'Postura + Linea' },
+        model: 'POSE',
+        estimate: '~45-90s',
+        desc: {
+          en: 'Best when a drone follows from behind/above and the full rider is visible: posture, balance, line drift and commitment moments.',
+          es: 'Ideal cuando el dron sigue desde atras/arriba y se ve el rider completo: postura, balance, deriva de linea y momentos de decision.',
+        },
+        tags: lang === 'es' ? ['postura', 'linea', 'rapido'] : ['posture', 'line', 'quick'],
+        color: sc.color,
+        available: true,
+      },
+      {
+        id: 'basic',
+        label: { en: 'Complete Review', es: 'Revision Completa' },
+        model: 'FULL',
+        estimate: '~1-2 min',
+        desc: {
+          en: 'Combines the pose pass with line efficiency, terrain context and a session summary. It does not add SAM trail masks.',
+          es: 'Combina postura con eficiencia de linea, contexto de terreno y resumen de sesion. No agrega mascara SAM del sendero.',
+        },
+        tags: lang === 'es' ? ['resumen', 'tendencia', 'scores'] : ['summary', 'trend', 'scores'],
+        color: '#6b7280',
+        available: true,
+      },
+      {
+        id: 'premium',
+        label: { en: 'Trail + Obstacles', es: 'Sendero + Obstaculos' },
+        model: 'SAM',
+        estimate: '~2-6 min',
+        desc: {
+          en: 'Adds SAM trail isolation to the drone review: rideable corridor, obstacles and line choice with richer visual context.',
+          es: 'Agrega aislamiento SAM a la revision con dron: corredor transitable, obstaculos y eleccion de linea con mas contexto visual.',
+        },
+        tags: lang === 'es' ? ['SAM3/SAM2', 'sendero', 'linea'] : ['SAM3/SAM2', 'trail', 'line'],
+        color: sc.color,
+        available: true,
+      },
+    ];
+  }
+
+  return [
+    {
+      id: 'fast',
+      label: { en: 'Fast', es: 'Rapido' },
+      model: 'HSV',
+      estimate: '~10-30s',
+      desc: { en: 'Pure color filter. No AI, no GPU needed. Instant results.', es: 'Filtro de color puro. Sin IA, sin GPU. Resultados instantaneos.' },
+      tags: ['instant', 'no GPU', 'HSV'],
+      color: '#22c55e',
+      available: true,
+    },
+    {
+      id: 'basic',
+      label: { en: 'Basic', es: 'Basico' },
+      model: 'SAM2',
+      estimate: '~1-3 min',
+      desc: { en: 'Coordinate-prompted. Calibrates HSV from AI mask. Any GPU.', es: 'Basado en coordenadas. Calibra HSV desde mascara IA. Cualquier GPU.' },
+      tags: ['~5s calib', '6 GB VRAM', 'SAM2'],
+      color: '#6b7280',
+      available: true,
+    },
+    {
+      id: 'premium',
+      label: { en: 'Premium', es: 'Premium' },
+      model: 'SAM3',
+      estimate: '~2-6 min',
+      desc: { en: 'Text-prompted, semantic and camera-aware. Best mask quality.', es: 'Basado en texto, semantico y adaptado a camara. Mejor calidad de mascara.' },
+      tags: ['~10s calib', '12 GB VRAM', 'SAM3.1'],
+      color: sc.color,
+      available: true,
+    },
+  ];
+}
+
+function activeCapabilitiesFor(sc, sport, cameraMode, lang) {
+  if (sport !== 'downhill') return sc.capabilities;
+  const trailIsolation = {
+    id: 'trail_isolation',
+    label: { en: 'Trail Isolation', es: 'Aislamiento de Sendero' },
+    live: true,
+  };
+  if (cameraMode === 'helmet_cam') {
+    return [
+      { id: 'line', label: { en: 'Line Review', es: 'Revision de Linea' }, live: true },
+      trailIsolation,
+      { id: 'obstacles', label: { en: 'Obstacle Cues', es: 'Senales de Obstaculos' }, live: true },
+      { id: 'playback', label: { en: 'Session Playback', es: 'Reproduccion' }, live: true },
+    ];
+  }
+  if (cameraMode === 'drone_front_overhead') {
+    return [
+      { id: 'trajectory', label: { en: 'Trajectory Review', es: 'Revision de Trayectoria' }, live: true },
+      trailIsolation,
+      { id: 'sections', label: { en: 'Section Review', es: 'Revision de Secciones' }, live: true },
+      { id: 'playback', label: { en: 'Session Playback', es: 'Reproduccion' }, live: true },
+    ];
+  }
+  return sc.capabilities;
+}
+
 export function AnalyzePage({ state, setState }) {
   const { sport, lang, demo, backendOnline } = state;
   const [step, setStep] = useState('upload');
@@ -474,6 +754,8 @@ export function AnalyzePage({ state, setState }) {
     const first = modes.find(m => m.available) || modes[0];
     return first ? first.id : 'fpv_follow';
   });
+  const [segTier, setSegTier] = useState(() => defaultReviewTier(sport, cameraMode)); // 'fast' | 'basic' | 'premium'
+  const [everyN, setEveryN] = useState(3);
   const [showPromptConfig, setShowPromptConfig] = useState(false);
   const [customPrompt, setCustomPrompt] = useState('');
   // Local flag: set synchronously when we confirm backend is live for THIS run.
@@ -493,6 +775,7 @@ export function AnalyzePage({ state, setState }) {
     const modes = CAMERA_MODES[sport] || [];
     const first = modes.find(m => m.available) || modes[0];
     setCameraMode(first ? first.id : 'fpv_follow');
+    setSegTier(defaultReviewTier(sport, first ? first.id : 'fpv_follow'));
     setCustomPrompt('');
     setShowPromptConfig(false);
     setStep('upload');
@@ -500,6 +783,17 @@ export function AnalyzePage({ state, setState }) {
     setError('');
     setIsRealRun(false);
   }, [sport]);
+
+  useEffect(() => {
+    const options = reviewOptionsFor({ sport, cameraMode, sc, lang });
+    const availableIds = options.filter(o => o.available).map(o => o.id);
+    const preferred = defaultReviewTier(sport, cameraMode);
+    if (!availableIds.includes(segTier)) {
+      setSegTier(availableIds.includes(preferred) ? preferred : availableIds[0] || 'fast');
+    } else if (sport === 'downhill' && (cameraMode === 'helmet_cam' || cameraMode === 'drone_front_overhead') && segTier !== 'premium') {
+      setSegTier('premium');
+    }
+  }, [sport, cameraMode, lang]);
 
   // Update default prompt display when camera changes
   useEffect(() => {
@@ -544,8 +838,10 @@ export function AnalyzePage({ state, setState }) {
 
     try {
       const result = await analyzeSession(file, sport, {
-        mode: sport === 'karting' ? kartingMode : undefined,
-        prompt: activePrompt || undefined,
+        mode: cameraMode,
+        tier: segTier,
+        everyN,
+        prompt: segTier === 'premium' ? (activePrompt || undefined) : undefined,
       });
       if (sport === 'karting') {
         // Navigate to karting review page with real session data
@@ -572,9 +868,23 @@ export function AnalyzePage({ state, setState }) {
     runAnalysis(file);
   }
 
+  const downhillProcSteps = {
+    drone_follow: ['Extracting frames', 'YOLO rider pose', segTier === 'premium' ? 'SAM trail isolation' : 'Trail/line proxy', 'Posture + line coaching', 'Building artifacts'],
+    helmet_cam: ['Extracting frames', 'POV trail review', segTier === 'premium' ? 'SAM obstacle isolation' : 'Obstacle/terrain cues', 'Line preview coaching', 'Building artifacts'],
+    drone_front_overhead: ['Extracting frames', 'Rider trajectory proxy', segTier === 'premium' ? 'SAM section geometry' : 'Section geometry review', 'Line choice coaching', 'Building artifacts'],
+    static_tripod: ['Extracting frames', 'Checkpoint posture review', 'Entry/exit cues', 'Repeated feature scoring', 'Building artifacts'],
+  };
+
   const PROC_STEPS = {
-    downhill: ['Extracting frames', 'Pose estimation', 'Terrain analysis', 'Line scoring', 'Building artifacts'],
-    karting:  ['Extracting frames', 'Track edge detection', 'Apex markers', 'Route segmentation', 'Corner scoring'],
+    downhill: downhillProcSteps[cameraMode] || downhillProcSteps.drone_follow,
+    karting:  [
+      'Extracting frames',
+      segTier === 'premium' ? 'SAM3 calibration frame' : segTier === 'basic' ? 'SAM2 coordinate prompt' : 'HSV color filter',
+      'HSV propagation (all frames)',
+      'YOLO kart tracking',
+      'Lateral pos · consistency',
+      'LLM coaching',
+    ],
     surf:     ['Extracting frames', 'Wave detection', 'Pose estimation', 'Phase analysis', 'Tagging maneuvers'],
   };
   const procSteps = PROC_STEPS[sport] || PROC_STEPS.downhill;
@@ -588,32 +898,49 @@ export function AnalyzePage({ state, setState }) {
 
   return (
     <div style={{ padding: '52px 0 0', minHeight: '100vh' }}>
-      <div style={{ maxWidth: 720, margin: '0 auto', padding: '48px 32px' }}>
+      <div style={{ maxWidth: 1240, margin: '0 auto', padding: '34px 34px' }}>
 
-        <div style={{ marginBottom: 28 }}>
-          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#6b6b6b', letterSpacing: '0.12em', marginBottom: 10 }}>
-            {lang === 'es' ? 'ANALIZAR SESIÓN' : 'ANALYZE SESSION'}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+            <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 12, color: '#9a9a9a', letterSpacing: '0.12em' }}>
+              {lang === 'es' ? 'ANALIZAR SESIÓN' : 'ANALYZE SESSION'}
+            </div>
+            <button
+              onClick={() => setState(s => ({ ...s, page: 'method' }))}
+              style={{
+                background: 'none', border: '1px solid #2a2a2a', borderRadius: 5,
+                padding: '7px 12px', cursor: 'pointer',
+                color: '#9a9a9a', fontFamily: 'Space Mono, monospace', fontSize: 11,
+                letterSpacing: '0.08em',
+              }}>
+              {lang === 'es' ? 'CÓMO SE HACE' : 'HOW IT WORKS'}
+            </button>
           </div>
-          <h2 style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 26, fontWeight: 700, color: '#EDEDE8', margin: 0 }}>
+          <h2 style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 34, fontWeight: 700, color: '#F4F1EA', margin: '0 0 8px' }}>
             {lang === 'es' ? `Adaptador: ${tl(sc.label, lang)}` : `Adapter: ${tl(sc.label, lang)}`}
           </h2>
+          <p style={{ margin: 0, maxWidth: 760, fontFamily: 'Space Grotesk, sans-serif', fontSize: 16, color: '#b7b7b0', lineHeight: 1.6 }}>
+            {lang === 'es'
+              ? 'Elige la cámara que tienes. La app te dirá qué puede medir con confianza y qué feedback esperar.'
+              : 'Choose the camera you have. The app tells you what can be measured reliably and what feedback to expect.'}
+          </p>
         </div>
 
         {/* Sport selector */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 32 }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
           {Object.values(SPORTS).map(s => (
             <button key={s.id}
               onClick={() => setState(st => ({ ...st, sport: s.id }))}
               style={{
-                flex: 1, padding: '10px 0', borderRadius: 6, cursor: 'pointer',
+                flex: 1, padding: '13px 0', borderRadius: 7, cursor: 'pointer',
                 border: `1px solid ${sport === s.id ? s.color + '80' : '#222'}`,
                 background: sport === s.id ? s.color + '18' : 'transparent',
                 color: sport === s.id ? s.color : '#555',
-                fontFamily: 'Space Grotesk, sans-serif', fontSize: 14, fontWeight: 500,
+                fontFamily: 'Space Grotesk, sans-serif', fontSize: 16, fontWeight: 600,
                 transition: 'all 0.2s',
               }}>
               {tl(s.label, lang)}
-              <span style={{ display: 'block', fontFamily: 'Space Mono, monospace', fontSize: 9, marginTop: 2, opacity: 0.6 }}>
+              <span style={{ display: 'block', fontFamily: 'Space Mono, monospace', fontSize: 10, marginTop: 3, opacity: 0.72 }}>
                 {s.readiness.toUpperCase()}
               </span>
             </button>
@@ -621,7 +948,7 @@ export function AnalyzePage({ state, setState }) {
         </div>
 
         {/* Step indicator */}
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 32 }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 24 }}>
           {STEPS.map((s, i) => {
             const stepIdx = STEPS.findIndex(x => x.id === step);
             const done = i < stepIdx;
@@ -630,17 +957,17 @@ export function AnalyzePage({ state, setState }) {
               <React.Fragment key={s.id}>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5 }}>
                   <div style={{
-                    width: 28, height: 28, borderRadius: '50%',
+                    width: 34, height: 34, borderRadius: '50%',
                     background: active ? sc.color : done ? sc.color + '40' : '#161616',
                     border: `2px solid ${active ? sc.color : done ? sc.color + '60' : '#222'}`,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontFamily: 'Space Mono, monospace', fontSize: 10,
+                    fontFamily: 'Space Mono, monospace', fontSize: 12,
                     color: active ? '#080808' : done ? sc.color : '#555',
                     fontWeight: 700, transition: 'all 0.3s', flexShrink: 0,
                   }}>
                     {done ? '✓' : i + 1}
                   </div>
-                  <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 11, color: active ? sc.color : '#555', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 13, color: active ? sc.color : '#666', whiteSpace: 'nowrap' }}>
                     {s[lang] || s.en}
                   </span>
                 </div>
@@ -669,10 +996,10 @@ export function AnalyzePage({ state, setState }) {
               if (!modes.length) return null;
               return (
                 <div style={{ marginBottom: 16 }}>
-                  <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#555', letterSpacing: '0.1em', marginBottom: 10 }}>
+                  <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 12, color: '#a8a8a0', letterSpacing: '0.1em', marginBottom: 12 }}>
                     {lang === 'es' ? 'TIPO DE CÁMARA' : 'CAMERA TYPE'}
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: modes.length === 2 ? '1fr 1fr' : 'repeat(3,1fr)', gap: 10 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))', gap: 16 }}>
                     {modes.map(m => {
                       const active = cameraMode === m.id;
                       const locked = !m.available;
@@ -681,31 +1008,42 @@ export function AnalyzePage({ state, setState }) {
                           onClick={() => { if (!locked) setCameraMode(m.id); }}
                           style={{
                             border: `1px solid ${active ? m.color + '80' : locked ? '#1a1a1a' : '#222'}`,
-                            borderRadius: 8, padding: '14px 16px',
+                            borderRadius: 10, padding: '20px 20px',
                             background: active ? m.color + '10' : locked ? '#0c0c0c' : '#111',
                             cursor: locked ? 'default' : 'pointer',
-                            transition: 'all 0.2s', position: 'relative', opacity: locked ? 0.55 : 1,
+                            transition: 'all 0.2s', position: 'relative', opacity: locked ? 0.72 : 1,
                           }}>
                           {/* Coming soon badge */}
                           {m.comingSoon && (
                             <div style={{
                               position: 'absolute', top: 8, right: 8,
-                              fontFamily: 'Space Mono, monospace', fontSize: 7,
-                              color: '#555', background: '#161616',
+                              fontFamily: 'Space Mono, monospace', fontSize: 9,
+                              color: '#8a8a8a', background: '#161616',
                               border: '1px solid #2a2a2a', borderRadius: 3,
                               padding: '1px 5px', letterSpacing: '0.06em',
                             }}>
                               {lang === 'es' ? 'PRÓXIMO' : 'SOON'}
                             </div>
                           )}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                            <span style={{ fontSize: 17 }}>{m.icon}</span>
-                            <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 13, fontWeight: 600, color: active ? m.color : locked ? '#444' : '#bbb' }}>
+                          {m.experimental && !locked && (
+                            <div style={{
+                              position: 'absolute', top: 8, right: 8,
+                              fontFamily: 'Space Mono, monospace', fontSize: 9,
+                              color: '#eab308', background: '#eab30812',
+                              border: '1px solid #eab30835', borderRadius: 3,
+                              padding: '2px 6px', letterSpacing: '0.06em',
+                            }}>
+                              {lang === 'es' ? 'EXP.' : 'EXP.'}
+                            </div>
+                          )}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                            <span style={{ fontSize: 22 }}>{m.icon}</span>
+                            <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 17, fontWeight: 700, color: active ? m.color : locked ? '#777' : '#eee9df' }}>
                               {tl(m.label, lang)}
                             </span>
                             {active && !locked && (
                               <span style={{
-                                marginLeft: 'auto', fontFamily: 'Space Mono, monospace', fontSize: 7,
+                                marginLeft: 'auto', fontFamily: 'Space Mono, monospace', fontSize: 9,
                                 color: m.color, background: m.color + '18', border: `1px solid ${m.color}40`,
                                 borderRadius: 3, padding: '1px 6px', letterSpacing: '0.06em',
                               }}>
@@ -713,17 +1051,17 @@ export function AnalyzePage({ state, setState }) {
                               </span>
                             )}
                           </div>
-                          <p style={{ margin: '0 0 10px', fontFamily: 'Space Grotesk, sans-serif', fontSize: 11, color: active ? '#aaa' : '#555', lineHeight: 1.5 }}>
+                          <p style={{ margin: '0 0 14px', fontFamily: 'Space Grotesk, sans-serif', fontSize: 15, color: active ? '#eee9df' : locked ? '#777' : '#b8b8b0', lineHeight: 1.62 }}>
                             {tl(m.desc, lang)}
                           </p>
                           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                             {m.outputs.map(o => (
                               <span key={o} style={{
-                                fontFamily: 'Space Mono, monospace', fontSize: 8,
-                                color: active ? m.color : '#444',
+                                fontFamily: 'Space Mono, monospace', fontSize: 10,
+                                color: active ? m.color : locked ? '#666' : '#8a8a8a',
                                 background: active ? m.color + '12' : '#141414',
                                 border: `1px solid ${active ? m.color + '30' : '#222'}`,
-                                borderRadius: 3, padding: '2px 7px',
+                                borderRadius: 4, padding: '3px 8px',
                               }}>{o}</span>
                             ))}
                           </div>
@@ -735,8 +1073,256 @@ export function AnalyzePage({ state, setState }) {
               );
             })()}
 
-            {/* ── Segmentation prompt config (collapsible) ── */}
-            <div style={{ marginBottom: 20 }}>
+            {(() => {
+              const strategy = (CAMERA_METHODOLOGY[sport] || {})[cameraMode];
+              if (!strategy) return null;
+              return (
+                <div style={{
+                  marginBottom: 22,
+                  border: `1px solid ${sc.color}35`,
+                  borderRadius: 12,
+                  background: `linear-gradient(135deg, ${sc.color}14, #111 58%)`,
+                  padding: '18px 20px',
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                  gap: 18,
+                  alignItems: 'stretch',
+                }}>
+                  <div>
+                    <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 11, color: sc.color, letterSpacing: '0.1em', marginBottom: 8 }}>
+                      {lang === 'es' ? 'QUÉ RECIBIRÁS CON ESTA CÁMARA' : 'WHAT THIS CAMERA GIVES YOU'}
+                    </div>
+                    <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 22, fontWeight: 700, color: '#F4F1EA', lineHeight: 1.2, marginBottom: 12 }}>
+                      {tl(strategy.title, lang)}
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                      {tl(strategy.athlete, lang).map(item => (
+                        <span key={item} style={{
+                          fontFamily: 'Space Mono, monospace', fontSize: 10,
+                          color: sc.color, background: sc.color + '12',
+                          border: `1px solid ${sc.color}35`, borderRadius: 999,
+                          padding: '4px 9px',
+                        }}>{item}</span>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
+                    <div style={{ border: '1px solid #2a2a2a', borderRadius: 9, background: '#0d0d0d', padding: '14px 15px' }}>
+                      <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#22c55e', letterSpacing: '0.09em', marginBottom: 7 }}>
+                        {lang === 'es' ? 'RECIBES' : 'YOU GET'}
+                      </div>
+                      <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 15, color: '#d8d8d2', lineHeight: 1.58 }}>
+                        {tl(strategy.current, lang)}
+                      </div>
+                    </div>
+                    <div style={{ border: '1px solid #2a2a2a', borderRadius: 9, background: '#0d0d0d', padding: '14px 15px' }}>
+                      <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#eab308', letterSpacing: '0.09em', marginBottom: 7 }}>
+                        {lang === 'es' ? 'TEN EN CUENTA' : 'KEEP IN MIND'}
+                      </div>
+                      <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 15, color: '#d8d8d2', lineHeight: 1.58 }}>
+                        {tl(strategy.next, lang)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ── Segmentation engine tier ── */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 12, color: '#a8a8a0', letterSpacing: '0.1em', marginBottom: 12 }}>
+                {sport === 'downhill'
+                  ? (lang === 'es' ? 'QUÉ QUIERES REVISAR' : 'WHAT DO YOU WANT REVIEWED')
+                  : (lang === 'es' ? 'CALIDAD DE ANÁLISIS' : 'ANALYSIS QUALITY')}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+                {reviewOptionsFor({ sport, cameraMode, sc, lang })/*
+                  {
+                    id: 'fast',
+                    label: sport === 'downhill' ? { en: 'Posture + Line', es: 'Postura + Línea' } : { en: 'Fast', es: 'Rápido' },
+                    model: sport === 'downhill' ? 'FEEDBACK' : 'HSV',
+                    desc: {
+                      en: sport === 'downhill'
+                        ? 'Best for a quick coaching pass: posture, balance, line drift and the moments where you should stay lower or commit earlier.'
+                        : 'Pure color filter. No AI, no GPU needed. Instant results.',
+                      es: sport === 'downhill'
+                        ? 'Ideal para un pase rápido de coaching: postura, balance, deriva de línea y momentos donde conviene ir más bajo o comprometer antes.'
+                        : 'Filtro de color puro. Sin IA, sin GPU. Resultados instantáneos.',
+                    },
+                    tags: sport === 'downhill'
+                      ? (lang === 'es' ? ['rápido', 'postura', 'línea'] : ['quick', 'posture', 'line'])
+                      : ['instant', 'no GPU', 'HSV'],
+                    color: sport === 'downhill' ? sc.color : '#22c55e',
+                    available: true,
+                  },
+                  {
+                    id: 'basic',
+                    label: sport === 'downhill' ? { en: 'Full Review', es: 'Revisión Completa' } : { en: 'Basic', es: 'Básico' },
+                    model: sport === 'downhill' ? 'FULL' : 'SAM2',
+                    desc: {
+                      en: sport === 'downhill'
+                        ? 'A fuller review of the same ride: posture trend, line efficiency, terrain context and session summary in one result.'
+                        : 'Coordinate-prompted. Calibrates HSV from AI mask. Any GPU.',
+                      es: sport === 'downhill'
+                        ? 'Una revisión más completa de la misma bajada: tendencia postural, eficiencia de línea, contexto de terreno y resumen de sesión.'
+                        : 'Basado en coordenadas. Calibra HSV desde máscara IA. Cualquier GPU.',
+                    },
+                    tags: sport === 'downhill'
+                      ? (lang === 'es' ? ['resumen', 'tendencia', 'scores'] : ['summary', 'trend', 'scores'])
+                      : ['~5s calib', '6 GB VRAM', 'SAM2'],
+                    color: '#6b7280',
+                    available: true,
+                  },
+                  {
+                    id: 'premium',
+                    label: sport === 'downhill' ? { en: 'Trail + Obstacles', es: 'Sendero + Obstáculos' } : { en: 'Premium', es: 'Premium' },
+                    model: sport === 'downhill' ? 'SAM' : 'SAM3',
+                    desc: {
+                      en: sport === 'downhill'
+                        ? 'Adds visual trail isolation to review the rideable corridor, obstacles and line choice with more context.'
+                        : 'Text-prompted — semantic, camera-agnostic. Best mask quality.',
+                      es: sport === 'downhill'
+                        ? 'Agrega aislamiento visual del sendero para revisar corredor transitable, obstáculos y elección de línea con más contexto.'
+                        : 'Basado en texto — semántico, agnóstico a cámara. Mejor calidad de máscara.',
+                    },
+                    tags: sport === 'downhill'
+                      ? (lang === 'es' ? ['sendero', 'obstáculos', 'línea'] : ['trail', 'obstacles', 'line'])
+                      : ['~10s calib', '12 GB VRAM', 'SAM3.1'],
+                    color: sc.color,
+                    available: true,
+                  },
+                */.map(t => {
+                  const active = segTier === t.id;
+                  const locked = !t.available;
+                  return (
+                    <div key={t.id}
+                      onClick={() => { if (!locked) { setSegTier(t.id); setEveryN(t.id === 'premium' ? 3 : 2); } }}
+                      style={{
+                        border: `1px solid ${active ? t.color + '80' : locked ? '#1a1a1a' : '#222'}`,
+                        borderRadius: 10, padding: '20px 20px',
+                        background: active ? t.color + '10' : locked ? '#0c0c0c' : '#111',
+                        cursor: locked ? 'default' : 'pointer',
+                        transition: 'all 0.2s', position: 'relative', opacity: locked ? 0.72 : 1,
+                      }}>
+                      {t.comingSoon && (
+                        <div style={{
+                          position: 'absolute', top: 8, right: 8,
+                          fontFamily: 'Space Mono, monospace', fontSize: 9,
+                          color: '#8a8a8a', background: '#161616',
+                          border: '1px solid #2a2a2a', borderRadius: 3,
+                          padding: '1px 5px', letterSpacing: '0.06em',
+                        }}>
+                          {lang === 'es' ? 'PRÓXIMO' : 'SOON'}
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                        <span style={{
+                          fontFamily: 'Space Mono, monospace', fontSize: 10,
+                          color: active ? t.color : locked ? '#555' : '#777',
+                          background: active ? t.color + '18' : '#1a1a1a',
+                          border: `1px solid ${active ? t.color + '40' : '#303030'}`,
+                          borderRadius: 3, padding: '2px 7px', letterSpacing: '0.06em',
+                        }}>{t.model}</span>
+                        <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 17, fontWeight: 700, color: active ? t.color : locked ? '#777' : '#eee9df' }}>
+                          {tl(t.label, lang)}
+                        </span>
+                        {active && !locked && (
+                          <span style={{
+                            marginLeft: 'auto', fontFamily: 'Space Mono, monospace', fontSize: 9,
+                            color: t.color, background: t.color + '18', border: `1px solid ${t.color}40`,
+                            borderRadius: 3, padding: '1px 6px', letterSpacing: '0.06em',
+                          }}>
+                            {lang === 'es' ? 'ACTIVO' : 'ACTIVE'}
+                          </span>
+                        )}
+                      </div>
+                      <p style={{ margin: '0 0 14px', fontFamily: 'Space Grotesk, sans-serif', fontSize: 15, color: active ? '#eee9df' : locked ? '#777' : '#b8b8b0', lineHeight: 1.62 }}>
+                        {tl(t.desc, lang)}
+                      </p>
+                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                        {t.tags.map(tag => (
+                          <span key={tag} style={{
+                            fontFamily: 'Space Mono, monospace', fontSize: 10,
+                            color: active ? t.color : locked ? '#444' : '#777',
+                            background: active ? t.color + '12' : '#181818',
+                            border: `1px solid ${active ? t.color + '30' : '#2a2a2a'}`,
+                            borderRadius: 4, padding: '3px 8px',
+                          }}>{tag}</span>
+                        ))}
+                        <span style={{
+                          fontFamily: 'Space Mono, monospace', fontSize: 10,
+                          color: active ? '#eee9df' : locked ? '#444' : '#aaa',
+                          background: active ? '#ffffff10' : '#181818',
+                          border: `1px solid ${active ? '#ffffff24' : '#2a2a2a'}`,
+                          borderRadius: 4, padding: '3px 8px',
+                        }}>
+                          {lang === 'es' ? `tiempo ${t.estimate}` : `time ${t.estimate}`}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* ── Frame sampling rate ── */}
+            {sport === 'karting' && <div style={{ marginBottom: 16 }}>
+              <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#777', letterSpacing: '0.1em', marginBottom: 10 }}>
+                {lang === 'es' ? 'MUESTREO DE FRAMES' : 'FRAME SAMPLING'}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                {/* stepper */}
+                <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #2a2a2a', borderRadius: 7, overflow: 'hidden', background: '#111' }}>
+                  <button onClick={() => setEveryN(v => Math.max(1, v - 1))} style={{
+                    width: 34, height: 36, background: 'none', border: 'none',
+                    borderRight: '1px solid #222', cursor: 'pointer',
+                    color: '#777', fontSize: 16, lineHeight: 1,
+                    transition: 'all 0.15s',
+                  }}
+                    onMouseEnter={e => { e.currentTarget.style.background = '#1a1a1a'; e.currentTarget.style.color = '#aaa'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'none';    e.currentTarget.style.color = '#555'; }}>
+                    −
+                  </button>
+                  <input
+                    type="number" min={1} max={60} value={everyN}
+                    onChange={e => setEveryN(Math.max(1, Math.min(60, parseInt(e.target.value) || 1)))}
+                    style={{
+                      width: 44, background: 'none', border: 'none', outline: 'none',
+                      fontFamily: 'Space Mono, monospace', fontSize: 15, fontWeight: 700,
+                      color: '#EDEDE8', textAlign: 'center', padding: '0 4px',
+                      MozAppearance: 'textfield',
+                    }}
+                  />
+                  <button onClick={() => setEveryN(v => Math.min(60, v + 1))} style={{
+                    width: 34, height: 36, background: 'none', border: 'none',
+                    borderLeft: '1px solid #222', cursor: 'pointer',
+                    color: '#777', fontSize: 16, lineHeight: 1,
+                    transition: 'all 0.15s',
+                  }}
+                    onMouseEnter={e => { e.currentTarget.style.background = '#1a1a1a'; e.currentTarget.style.color = '#aaa'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'none';    e.currentTarget.style.color = '#555'; }}>
+                    +
+                  </button>
+                </div>
+                {/* label */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#888' }}>
+                    {lang === 'es' ? `1 de cada ${everyN} frame${everyN > 1 ? 's' : ''}` : `every ${everyN} frame${everyN > 1 ? 's' : ''}`}
+                  </span>
+                  {segTier === 'premium' && (
+                    <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 8, color: '#444' }}>
+                      {everyN <= 2  ? (lang === 'es' ? 'máxima calidad · más lento' : 'max quality · slower') :
+                       everyN <= 5  ? (lang === 'es' ? 'balance calidad / velocidad' : 'quality / speed balance') :
+                                      (lang === 'es' ? 'rápido · calidad reducida' : 'fast · reduced quality')}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <style>{`input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}`}</style>
+            </div>}
+
+            {/* ── Segmentation prompt config (collapsible, premium only) ── */}
+            {segTier === 'premium' && sport === 'karting' && <div style={{ marginBottom: 20 }}>
               <button
                 onClick={() => setShowPromptConfig(v => !v)}
                 style={{
@@ -754,7 +1340,7 @@ export function AnalyzePage({ state, setState }) {
                   {!customPrompt && <span style={{ color: '#3a3a3a', marginLeft: 8, fontWeight: 400 }}>{defaultPrompt}</span>}
                 </span>
                 <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#444' }}>
-                  {showPromptConfig ? '▲' : '▼'}
+                  {showPromptConfig ? '?' : '?'}
                 </span>
               </button>
 
@@ -806,7 +1392,7 @@ export function AnalyzePage({ state, setState }) {
                   </div>
                 </div>
               )}
-            </div>
+            </div>}
 
             <div
               onDragOver={e => { e.preventDefault(); setDrag(true); }}
@@ -815,7 +1401,7 @@ export function AnalyzePage({ state, setState }) {
               onClick={() => document.getElementById('dc-file-in').click()}
               style={{
                 border: `2px dashed ${drag ? sc.color : '#222'}`,
-                borderRadius: 12, padding: '56px 32px',
+                borderRadius: 14, padding: '68px 36px',
                 textAlign: 'center', cursor: 'pointer',
                 background: drag ? sc.color + '08' : '#111111',
                 transition: 'all 0.2s', marginBottom: 12,
@@ -828,10 +1414,10 @@ export function AnalyzePage({ state, setState }) {
                 <rect x="32" y="13" width="10" height="5" rx="2" fill="none" stroke="#EDEDE8" strokeWidth="1.5" />
                 <rect x="32" y="26" width="10" height="5" rx="2" fill="none" stroke="#EDEDE8" strokeWidth="1.5" />
               </svg>
-              <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 16, color: '#EDEDE8', marginBottom: 6 }}>
+              <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 20, color: '#F4F1EA', marginBottom: 8, fontWeight: 700 }}>
                 {lang === 'es' ? 'Arrastra tu video aquí' : 'Drop session video here'}
               </div>
-              <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#6b6b6b' }}>
+              <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 12, color: '#8a8a8a' }}>
                 MP4 · MOV · AVI — {lang === 'es' ? 'o haz clic para seleccionar' : 'or click to browse'}
               </div>
             </div>
@@ -847,7 +1433,7 @@ export function AnalyzePage({ state, setState }) {
                   borderBottom: '1px solid #ef444420',
                   display: 'flex', alignItems: 'center', gap: 8,
                 }}>
-                  <span style={{ color: '#ef6444', fontSize: 14 }}>⚠</span>
+                  <span style={{ color: '#ef6444', fontSize: 14 }}>?</span>
                   <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#ef6464', letterSpacing: '0.08em' }}>
                     {lang === 'es' ? 'BACKEND OFFLINE — EL VIDEO NO SERÁ PROCESADO' : 'BACKEND OFFLINE — VIDEO WILL NOT BE PROCESSED'}
                   </span>
@@ -878,7 +1464,7 @@ export function AnalyzePage({ state, setState }) {
                 {lang === 'es' ? 'CAPACIDADES ACTIVAS' : 'ACTIVE CAPABILITIES'}
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {sc.capabilities.map(cap => <CapChip key={cap.id} cap={cap} sport={sport} lang={lang} compact />)}
+                {activeCapabilitiesFor(sc, sport, cameraMode, lang).map(cap => <CapChip key={cap.id} cap={cap} sport={sport} lang={lang} compact />)}
               </div>
             </div>
           </div>
@@ -969,17 +1555,6 @@ export function AnalyzePage({ state, setState }) {
 
 // ── Sessions ──────────────────────────────────────────────────────────────────
 
-const DEMO_SESSIONS = [
-  { session_id: 'demo-s001', sport: 'downhill', original_filename: 'la_parva_run3.mp4', avg_balance_score: 78, avg_line_efficiency_score: 82, avg_speed_proxy: 3.4 },
-  { session_id: 'karting-demo-luciano', sport: 'karting', original_filename: 'kart_fpv_luciano.mp4',  avg_balance_score: null, avg_line_efficiency_score: null, avg_speed_proxy: null, _kartingDemo: true, _kartingVideo: 'luciano', _kartingMode: 'fpv_follow' },
-  { session_id: 'karting-demo-gopro',   sport: 'karting', original_filename: 'gopro_helmet_cam.mp4', avg_balance_score: null, avg_line_efficiency_score: null, avg_speed_proxy: null, _kartingDemo: true, _kartingVideo: 'gopro',   _kartingMode: 'action_cam' },
-  { session_id: 'demo-s003', sport: 'downhill', original_filename: 'la_parva_run1.mp4', avg_balance_score: 84, avg_line_efficiency_score: 76, avg_speed_proxy: 3.1 },
-  { session_id: 'demo-s004', sport: 'surf',     original_filename: 'punta_lobos.mp4',   avg_balance_score: null, avg_line_efficiency_score: null, avg_speed_proxy: null },
-];
-
-// Non-downhill demo sessions always shown as reference (karting demo + surf shell)
-const SHELL_DEMOS = DEMO_SESSIONS.filter(s => s.sport !== 'downhill');
-
 function formatDate(session_id) {
   if (!session_id || session_id.startsWith('demo')) return '—';
   if (session_id.length >= 8) {
@@ -997,8 +1572,14 @@ function SessionRow({ sess, lang, onClick, onDelete }) {
   const isReal = !sess._kartingDemo && !sess.session_id?.startsWith('demo');
 
   const scores = [];
-  if (sess.avg_balance_score != null) scores.push({ k: lang === 'es' ? 'pos' : 'pos', v: Math.round(sess.avg_balance_score) });
-  if (sess.avg_line_efficiency_score != null) scores.push({ k: 'line', v: Math.round(sess.avg_line_efficiency_score) });
+  if (sess.sport === 'karting') {
+    if (sess.frames_analyzed != null) scores.push({ k: 'frames', v: sess.frames_analyzed });
+    if (sess.mode === 'action_cam' && sess.kerb_events != null) scores.push({ k: 'kerb', v: sess.kerb_events });
+    else if (sess.karts_detected != null) scores.push({ k: 'karts', v: sess.karts_detected });
+  } else {
+    if (sess.avg_balance_score != null) scores.push({ k: lang === 'es' ? 'pos' : 'pos', v: Math.round(sess.avg_balance_score) });
+    if (sess.avg_line_efficiency_score != null) scores.push({ k: 'line', v: Math.round(sess.avg_line_efficiency_score) });
+  }
 
   function handleDelete(e) {
     e.stopPropagation();
@@ -1041,14 +1622,16 @@ function SessionRow({ sess, lang, onClick, onDelete }) {
         </div>
         <div style={{ display: 'flex', gap: 18, flexShrink: 0 }}>
           {sess._kartingDemo ? (
-            <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: sc.color, background: sc.color + '15', border: `1px solid ${sc.color}40`, borderRadius: 3, padding: '3px 8px' }}>DEMO ◆</span>
+            <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: sc.color, background: sc.color + '15', border: `1px solid ${sc.color}40`, borderRadius: 3, padding: '3px 8px' }}>DEMO ?</span>
           ) : scores.length > 0 ? scores.map(s => (
             <div key={s.k} style={{ textAlign: 'center' }}>
               <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 17, color: sc.color, lineHeight: 1 }}>{s.v}</div>
-              <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 8, color: '#6b6b6b', textTransform: 'uppercase', marginTop: 2 }}>{s.k}</div>
+              <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#777', textTransform: 'uppercase', marginTop: 2 }}>{s.k}</div>
             </div>
           )) : (
-            <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#3a3a3a', border: '1px solid #222', borderRadius: 3, padding: '3px 8px' }}>SHELL</span>
+            <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#6b6b6b', border: '1px solid #222', borderRadius: 3, padding: '3px 8px' }}>
+              {sess.sport === 'karting' ? 'KARTING' : 'READY'}
+            </span>
           )}
         </div>
         <div style={{ color: '#3a3a3a', fontSize: 14, paddingLeft: 4, flexShrink: 0 }}>→</div>
@@ -1103,19 +1686,13 @@ export function SessionsPage({ state, setState }) {
 
   useEffect(() => {
     if (!backendOnline) {
-      setSessions(DEMO_SESSIONS);
+      setSessions([]);
       return;
     }
     setLoading(true);
     listSessions()
-      .then(data => {
-        const real = data.length ? data : DEMO_SESSIONS.filter(s => s.sport === 'downhill');
-        // Always append karting/surf shell demos as reference entries
-        const shellIds = new Set(SHELL_DEMOS.map(s => s.session_id));
-        const merged = [...real.filter(s => !shellIds.has(s.session_id)), ...SHELL_DEMOS];
-        setSessions(merged);
-      })
-      .catch(() => setSessions(DEMO_SESSIONS))
+      .then(data => setSessions(data || []))
+      .catch(() => setSessions([]))
       .finally(() => setLoading(false));
   // refreshKey forces re-fetch when user navigates back or clicks refresh
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1200,11 +1777,312 @@ export function SessionsPage({ state, setState }) {
               }} />
           ))}
           {list.length === 0 && !loading && (
-            <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 14, color: '#555', padding: '40px 0', textAlign: 'center' }}>
-              {lang === 'es' ? 'Sin sesiones guardadas.' : 'No saved sessions yet.'}
+            <div style={{ padding: '48px 0', textAlign: 'center' }}>
+              <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 14, color: '#555', marginBottom: 12 }}>
+                {lang === 'es' ? 'Aún no hay sesiones procesadas.' : 'No processed sessions yet.'}
+              </div>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => setState(s => ({ ...s, page: 'analyze' }))}
+                  style={{
+                    background: 'none', border: '1px solid #333', borderRadius: 5,
+                    padding: '8px 18px', cursor: 'pointer',
+                    fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#888',
+                    letterSpacing: '0.08em', transition: 'all 0.2s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.color = '#EDEDE8'; e.currentTarget.style.borderColor = '#555'; }}
+                  onMouseLeave={e => { e.currentTarget.style.color = '#888'; e.currentTarget.style.borderColor = '#333'; }}>
+                  {lang === 'es' ? 'ANALIZAR VIDEO →' : 'ANALYZE VIDEO →'}
+                </button>
+                <button
+                  onClick={() => setState(s => ({ ...s, page: 'demos' }))}
+                  style={{
+                    background: 'none', border: '1px solid #222', borderRadius: 5,
+                    padding: '8px 18px', cursor: 'pointer',
+                    fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#555',
+                    letterSpacing: '0.08em', transition: 'all 0.2s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.color = '#888'; e.currentTarget.style.borderColor = '#333'; }}
+                  onMouseLeave={e => { e.currentTarget.style.color = '#555'; e.currentTarget.style.borderColor = '#222'; }}>
+                  {lang === 'es' ? 'VER DEMOS' : 'VIEW DEMOS'}
+                </button>
+              </div>
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Demos ─────────────────────────────────────────────────────────────────────
+
+const CURATED_DEMOS = [
+  {
+    id: 'kt-fpv',
+    sport: 'karting',
+    mode: 'fpv_follow',
+    modeLabel: { en: 'FPV Drone', es: 'Drone FPV' },
+    tier: 'premium',
+    title: { en: 'FPV Follow — Circuit', es: 'Drone FPV — Circuito' },
+    desc: {
+      en: 'Single kart chased by FPV drone. SAM3 text-prompt track segmentation, YOLO11n detection, ByteTrack IDs, lateral position + line consistency.',
+      es: 'Un kart seguido por drone FPV. Segmentación SAM3 text-prompt, YOLO11n, ByteTrack IDs, posición lateral + consistencia de línea.',
+    },
+    videoSrc: '/karting-demo/luciano_annotated.mp4',
+    summaryUrl: '/karting-demo/luciano_summary.json',
+    available: true,
+    nav: s => ({ ...s, page: 'karting-demo', sport: 'karting', kartingMode: 'fpv_follow', kartingVideo: 'luciano', kartingSessionId: null }),
+  },
+  {
+    id: 'kt-gopro',
+    sport: 'karting',
+    mode: 'action_cam',
+    modeLabel: { en: 'GoPro Helmet', es: 'GoPro Casco' },
+    tier: 'basic',
+    title: { en: 'GoPro Helmet Cam', es: 'GoPro — Cámara de Casco' },
+    desc: {
+      en: '21 karts tracked simultaneously. Gap-to-ahead bar, kerb contact detection L/R, persistent ByteTrack IDs across the full session.',
+      es: '21 karts seguidos simultáneamente. Barra de distancia al kart de adelante, detección de contacto con kerb izq/der e IDs ByteTrack persistentes.',
+    },
+    videoSrc: '/karting-demo/gopro_annotated.mp4',
+    summaryUrl: '/karting-demo/gopro_summary.json',
+    available: true,
+    nav: s => ({ ...s, page: 'karting-demo', sport: 'karting', kartingMode: 'action_cam', kartingVideo: 'gopro', kartingSessionId: null }),
+  },
+  {
+    id: 'dh-action',
+    sport: 'downhill',
+    mode: 'action_cam',
+    modeLabel: { en: 'Helmet Cam', es: 'Cámara de Casco' },
+    tier: 'premium',
+    title: { en: 'DH Helmet Cam', es: 'Descenso — Cámara de Casco' },
+    desc: {
+      en: 'First-person helmet camera on trail. Pose estimation, terrain classification, line efficiency scoring.',
+      es: 'Cámara de casco en primera persona en sendero. Estimación de pose, clasificación de terreno, scoring de eficiencia de línea.',
+    },
+    videoSrc: '/dh-demo/dh_annotated.mp4',
+    summaryUrl: '/dh-demo/dh_summary.json',
+    available: false,
+    nav: null,
+  },
+];
+
+function DemoCard({ demo, lang, onView }) {
+  const sc = SPORTS[demo.sport];
+  const [summary, setSummary] = useState(null);
+  const [hov, setHov] = useState(false);
+  const videoRef = useRef(null);
+
+  useEffect(() => {
+    if (!demo.available) return;
+    fetch(demo.summaryUrl)
+      .then(r => r.json())
+      .then(setSummary)
+      .catch(() => {});
+  }, [demo.summaryUrl, demo.available]);
+
+  useEffect(() => {
+    if (!videoRef.current) return;
+    if (hov) videoRef.current.play().catch(() => {});
+    else { videoRef.current.pause(); videoRef.current.currentTime = 0; }
+  }, [hov]);
+
+  const tierColor = demo.tier === 'premium' ? sc.color : '#6b7280';
+
+  return (
+    <div
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{
+        border: `1px solid ${hov && demo.available ? sc.color + '60' : '#1e1e1e'}`,
+        borderRadius: 12, overflow: 'hidden',
+        background: '#0f0f0f',
+        transition: 'border-color 0.25s',
+        cursor: demo.available ? 'pointer' : 'default',
+        opacity: demo.available ? 1 : 0.55,
+        display: 'flex', flexDirection: 'column',
+      }}
+      onClick={() => { if (demo.available && onView) onView(); }}
+    >
+      {/* Video preview */}
+      <div style={{ position: 'relative', aspectRatio: '16/9', background: '#080808', overflow: 'hidden', flexShrink: 0 }}>
+        {demo.available ? (
+          <video
+            ref={videoRef}
+            src={demo.videoSrc}
+            muted playsInline loop preload="metadata"
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+          />
+        ) : (
+          <div style={{
+            width: '100%', height: '100%',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10,
+          }}>
+            <div style={{ width: 36, height: 36, borderRadius: '50%', border: '1px solid #1e1e1e', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ fontSize: 14, opacity: 0.3 }}>+</span>
+            </div>
+            <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#2a2a2a', letterSpacing: '0.1em' }}>
+              {lang === 'es' ? 'VIDEO NO DISPONIBLE' : 'VIDEO NOT YET AVAILABLE'}
+            </div>
+            <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 8, color: '#1e1e1e' }}>
+              {demo.videoSrc}
+            </div>
+          </div>
+        )}
+        {demo.available && hov && (
+          <div style={{
+            position: 'absolute', bottom: 8, right: 8,
+            fontFamily: 'Space Mono, monospace', fontSize: 8,
+            color: '#080808', background: sc.color,
+            borderRadius: 3, padding: '2px 7px', letterSpacing: '0.06em',
+            pointerEvents: 'none',
+          }}>? PREVIEW</div>
+        )}
+        {/* Top-left sport badge */}
+        <div style={{
+          position: 'absolute', top: 8, left: 8,
+          fontFamily: 'Space Mono, monospace', fontSize: 8, letterSpacing: '0.08em',
+          color: sc.color, background: '#080808cc',
+          border: `1px solid ${sc.color}40`, borderRadius: 3, padding: '2px 7px',
+        }}>{sc.abbr}</div>
+      </div>
+
+      {/* Card body */}
+      <div style={{ padding: '16px 18px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+        {/* Mode + tier badges */}
+        <div style={{ display: 'flex', gap: 5, marginBottom: 10, flexWrap: 'wrap' }}>
+          <span style={{
+            fontFamily: 'Space Mono, monospace', fontSize: 8, letterSpacing: '0.06em',
+            color: '#888', background: '#161616', border: '1px solid #2a2a2a',
+            borderRadius: 3, padding: '2px 7px',
+          }}>{tl(demo.modeLabel, lang)}</span>
+          <span style={{
+            fontFamily: 'Space Mono, monospace', fontSize: 8, letterSpacing: '0.06em',
+            color: tierColor, background: tierColor + '15', border: `1px solid ${tierColor}40`,
+            borderRadius: 3, padding: '2px 7px',
+          }}>{demo.tier === 'premium' ? 'SAM3' : 'SAM2'}</span>
+        </div>
+
+        <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 15, fontWeight: 600, color: '#EDEDE8', marginBottom: 6 }}>
+          {tl(demo.title, lang)}
+        </div>
+        <p style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 11, color: '#555', lineHeight: 1.6, margin: '0 0 14px', flex: 1 }}>
+          {tl(demo.desc, lang)}
+        </p>
+
+        {/* Stats row — handles both karting and DH summary shapes */}
+        {summary && (() => {
+          const topKart = Object.values(summary.driver_scores || {})[0];
+          const stats = [
+            summary.frames_analyzed != null && { v: summary.frames_analyzed, k: 'FRAMES' },
+            summary.karts_detected  != null && { v: summary.karts_detected,  k: 'KARTS'  },
+            topKart?.score       != null && { v: topKart.score.toFixed(0),       k: 'SCORE'   },
+            topKart?.consistency > 0     && { v: topKart.consistency.toFixed(0) + '%', k: 'CONSIST.' },
+            // DH fields
+            summary.avg_balance_score         != null && { v: Math.round(summary.avg_balance_score),        k: 'BALANCE'  },
+            summary.avg_line_efficiency_score != null && { v: Math.round(summary.avg_line_efficiency_score), k: 'LINE EFF.' },
+          ].filter(Boolean);
+          if (!stats.length) return null;
+          return (
+            <div style={{ display: 'flex', gap: 16, marginBottom: 14, flexWrap: 'wrap' }}>
+              {stats.map(({ v, k }) => (
+                <div key={k} style={{ textAlign: 'center' }}>
+                  <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 15, color: sc.color, lineHeight: 1 }}>{v}</div>
+                  <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 7, color: '#555', marginTop: 3, letterSpacing: '0.06em' }}>{k}</div>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+
+        {demo.available ? (
+          <button
+            onClick={e => { e.stopPropagation(); if (onView) onView(); }}
+            style={{
+              background: sc.color + '18', border: `1px solid ${sc.color}40`,
+              borderRadius: 5, padding: '8px 16px', cursor: 'pointer',
+              fontFamily: 'Space Mono, monospace', fontSize: 9,
+              color: sc.color, letterSpacing: '0.08em',
+              transition: 'background 0.2s', width: '100%',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = sc.color + '28'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = sc.color + '18'; }}>
+            {lang === 'es' ? 'VER ANÁLISIS →' : 'VIEW ANALYSIS →'}
+          </button>
+        ) : (
+          <div style={{
+            border: '1px solid #1a1a1a', borderRadius: 5, padding: '8px 16px',
+            fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#2a2a2a',
+            letterSpacing: '0.08em', textAlign: 'center',
+          }}>
+            {lang === 'es' ? 'PRÓXIMAMENTE' : 'COMING SOON'}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function DemosPage({ state, setState }) {
+  const { lang } = state;
+
+  return (
+    <div style={{ padding: '52px 0 0', minHeight: '100vh' }}>
+      <div style={{ maxWidth: 1020, margin: '0 auto', padding: '48px 32px' }}>
+
+        <div style={{ marginBottom: 36 }}>
+          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#6b6b6b', letterSpacing: '0.12em', marginBottom: 10 }}>
+            {lang === 'es' ? 'ANÁLISIS DE REFERENCIA' : 'REFERENCE ANALYSES'}
+          </div>
+          <h2 style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 26, fontWeight: 700, color: '#EDEDE8', margin: '0 0 8px' }}>
+            {lang === 'es' ? 'Demos precargadas' : 'Curated demos'}
+          </h2>
+          <p style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 13, color: '#6b6b6b', margin: 0, lineHeight: 1.6, maxWidth: 520 }}>
+            {lang === 'es'
+              ? 'Videos reales procesados con el pipeline completo. Explora resultados sin necesidad de subir tu propio material.'
+              : 'Real footage processed through the full pipeline. Explore results without uploading your own material.'}
+          </p>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 16, marginBottom: 40 }}>
+          {CURATED_DEMOS.map(demo => (
+            <DemoCard
+              key={demo.id}
+              demo={demo}
+              lang={lang}
+              onView={demo.nav ? () => setState(demo.nav) : undefined}
+            />
+          ))}
+        </div>
+
+        {/* How to add a demo */}
+        <div style={{
+          padding: '18px 22px', border: '1px solid #1a1a1a', borderRadius: 8, background: '#0d0d0d',
+        }}>
+          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#3a3a3a', letterSpacing: '0.1em', marginBottom: 8 }}>
+            {lang === 'es' ? 'AÑADIR DEMO' : 'ADD DEMO'}
+          </div>
+          <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 12, color: '#3a3a3a', lineHeight: 1.6, marginBottom: 10 }}>
+            {lang === 'es'
+              ? 'Coloca el video anotado y el JSON de resumen en la carpeta correcta y reinicia el dev server.'
+              : 'Place the annotated video and summary JSON in the right folder and restart the dev server.'}
+          </div>
+          <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+            {[
+              { folder: 'frontend/public/karting-demo/', files: ['*_annotated.mp4', '*_summary.json'], color: '#1fa84a' },
+              { folder: 'frontend/public/dh-demo/',     files: ['dh_annotated.mp4', 'dh_summary.json'], color: '#c97a28' },
+            ].map(slot => (
+              <div key={slot.folder} style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, lineHeight: 1.8 }}>
+                <span style={{ color: slot.color + '80' }}>{slot.folder}</span>
+                {slot.files.map(f => (
+                  <div key={f} style={{ color: '#2a2a2a', paddingLeft: 14 }}>? {f}</div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+
       </div>
     </div>
   );
@@ -1222,10 +2100,11 @@ const CAMERA_DATA = {
       { id: 'gps',      label: { en: 'GPS / OBD',        es: 'GPS / OBD' },        tier: 2, recommended: false },
     ],
     rows: [
-      { label: { en: 'Kart detection (YOLO11)', es: 'Detección de kart (YOLO11)' },          fpv: 2, gopro: 2, overhead: 2, gps: 0 },
+      { label: { en: 'Driver body pose', es: 'Pose corporal del piloto' },                fpv: 0, gopro: 0, overhead: 0, gps: 0 },
+      { label: { en: 'Kart detection (YOLO11)', es: 'Detección de kart (YOLO11)' },       fpv: 2, gopro: 1, overhead: 2, gps: 0 },
       { label: { en: 'Lateral position on track', es: 'Posición lateral en pista' },      fpv: 2, gopro: 1, overhead: 2, gps: 0 },
-      { label: { en: 'Track segmentation (SAM3)', es: 'Segmentación de pista (SAM3)' },   fpv: 2, gopro: 2, overhead: 2, gps: 0 },
-      { label: { en: 'Multi-kart tracking', es: 'Tracking multi-kart' },                  fpv: 2, gopro: 2, overhead: 2, gps: 0 },
+      { label: { en: 'Track segmentation (SAM2 / SAM3)', es: 'Segmentación de pista (SAM2 / SAM3)' }, fpv: 2, gopro: 2, overhead: 2, gps: 0 },
+      { label: { en: 'Multi-kart tracking', es: 'Tracking multi-kart' },                  fpv: 2, gopro: 1, overhead: 2, gps: 0 },
       { label: { en: 'Gap to kart ahead', es: 'Brecha al kart adelante' },                fpv: 0, gopro: 2, overhead: 2, gps: 0 },
       { label: { en: 'Kerb contact detection', es: 'Detección de contacto kerb' },        fpv: 0, gopro: 2, overhead: 1, gps: 0 },
       { label: { en: 'Lap timing', es: 'Tiempo por vuelta' },                             fpv: 0, gopro: 0, overhead: 2, gps: 2 },
@@ -1253,27 +2132,39 @@ const CAMERA_DATA = {
   downhill: {
     sources: [
       { id: 'trail',    label: { en: 'Trail / Helmet Cam', es: 'Cámara de Sendero / Casco' }, tier: 0, recommended: true  },
-      { id: 'drone',    label: { en: 'Follow Drone',        es: 'Drone de Seguimiento' },      tier: 1, recommended: false },
+      { id: 'follow_drone', label: { en: 'Follow Drone',    es: 'Drone de Seguimiento' },      tier: 1, recommended: true },
+      { id: 'front_overhead', label:{ en: 'Front / Overhead', es: 'Frontal / Cenital' },       tier: 1, recommended: false },
       { id: 'checkpoint',label:{ en: 'Fixed Checkpoint',    es: 'Checkpoint Fijo' },            tier: 1, recommended: false },
       { id: 'imu',      label: { en: 'IMU / GPS',           es: 'IMU / GPS' },                 tier: 2, recommended: false },
     ],
     rows: [
-      { label: { en: 'Body pose (MediaPipe)', es: 'Pose corporal (MediaPipe)' },              trail: 2, drone: 1, checkpoint: 1, imu: 0 },
-      { label: { en: 'Balance score', es: 'Score de balance' },                               trail: 2, drone: 1, checkpoint: 1, imu: 0 },
-      { label: { en: 'Terrain classification', es: 'Clasificación de terreno' },              trail: 2, drone: 2, checkpoint: 0, imu: 0 },
-      { label: { en: 'Line efficiency', es: 'Eficiencia de línea' },                          trail: 1, drone: 2, checkpoint: 0, imu: 0 },
-      { label: { en: 'Section breakdown', es: 'Desglose por sección' },                       trail: 0, drone: 1, checkpoint: 2, imu: 1 },
-      { label: { en: 'Run-over-run comparison', es: 'Comparación entre bajadas' },            trail: 1, drone: 1, checkpoint: 2, imu: 2 },
-      { label: { en: 'Speed / G-force', es: 'Velocidad / G' },                               trail: 0, drone: 0, checkpoint: 0, imu: 2 },
-      { label: { en: 'AI coaching (VLM)', es: 'Coaching IA (VLM)' },                        trail: 2, drone: 2, checkpoint: 2, imu: 0 },
+      { label: { en: 'Full-body posture detection', es: 'Detección de postura cuerpo completo' }, trail: 0, follow_drone: 2, front_overhead: 1, checkpoint: 2, imu: 0 },
+      { label: { en: 'POV / cockpit cues', es: 'Señales POV / cockpit' }, trail: 2, follow_drone: 0, front_overhead: 0, checkpoint: 0, imu: 0 },
+      { label: { en: 'Visual trail segmentation (SAM2 / SAM3)', es: 'Segmentación visual de sendero (SAM2 / SAM3)' }, trail: 2, follow_drone: 1, front_overhead: 2, checkpoint: 1, imu: 0 },
+      { label: { en: 'Line / trajectory geometry', es: 'Geometría de línea / trayectoria' }, trail: 1, follow_drone: 2, front_overhead: 2, checkpoint: 0, imu: 1 },
+      { label: { en: 'Obstacle / terrain preview', es: 'Previsualización obstáculos / terreno' }, trail: 2, follow_drone: 1, front_overhead: 1, checkpoint: 1, imu: 0 },
+      { label: { en: 'Section breakdown', es: 'Desglose por sección' }, trail: 0, follow_drone: 1, front_overhead: 2, checkpoint: 2, imu: 1 },
+      { label: { en: 'Speed / G-force', es: 'Velocidad / G' }, trail: 0, follow_drone: 0, front_overhead: 0, checkpoint: 0, imu: 2 },
+      { label: { en: 'AI coaching (VLM)', es: 'Coaching IA (VLM)' }, trail: 2, follow_drone: 2, front_overhead: 2, checkpoint: 2, imu: 0 },
     ],
     pipelines: {
       trail: [
-        { step: 'MediaPipe', color: '#c97a28', desc: { en: '17 pose keypoints / frame', es: '17 puntos de pose / frame' } },
-        { step: 'HSV terrain', color: '#eab308', desc: { en: 'Classify rock / root / drop', es: 'Clasifica piedra / raíz / caída' } },
-        { step: 'Balance', color: '#c97a28', desc: { en: 'Hip/shoulder alignment score', es: 'Score de alineación cadera/hombros' } },
-        { step: 'Line', color: '#c97a28', desc: { en: 'Path efficiency vs terrain', es: 'Eficiencia de trayectoria vs terreno' } },
-        { step: 'Groq LLM', color: '#a78bfa', desc: { en: 'metrics-only summary', es: 'resumen solo métricas' } },
+        { step: 'SAM Trail', color: '#eab308', desc: { en: 'Trail surface and obstacle mask from POV footage', es: 'Máscara de sendero y obstáculos desde POV' } },
+        { step: 'POV cues', color: '#c97a28', desc: { en: 'Line preview and risk moments from rider view', es: 'Línea próxima y momentos de riesgo desde la vista del rider' } },
+        { step: 'Line proxy', color: '#c97a28', desc: { en: 'Trajectory estimate from visible trail geometry', es: 'Estimación de trayectoria desde geometría visible' } },
+        { step: 'Groq VLM', color: '#a78bfa', desc: { en: 'one visual coaching pass per video', es: 'un pase visual de coaching por video' } },
+      ],
+      follow_drone: [
+        { step: 'YOLO Pose', color: '#c97a28', desc: { en: 'Full rider body keypoints when visible', es: 'Keypoints de cuerpo completo cuando se ve el rider' } },
+        { step: 'Trajectory', color: '#c97a28', desc: { en: 'Rider path relative to the visible corridor', es: 'Trayectoria del rider relativa al corredor visible' } },
+        { step: 'Posture + line', color: '#c97a28', desc: { en: 'Combine body position with chosen line', es: 'Combina postura corporal con línea elegida' } },
+        { step: 'Groq VLM', color: '#a78bfa', desc: { en: 'frame-specific coaching', es: 'coaching específico de frame' } },
+      ],
+      front_overhead: [
+        { step: 'SAM Trail', color: '#eab308', desc: { en: 'Top/front trail geometry', es: 'Geometría de sendero cenital/frontal' } },
+        { step: 'Rider detect', color: '#c97a28', desc: { en: 'Rider centroid more than full pose', es: 'Centroide del rider más que pose completa' } },
+        { step: 'Sections', color: '#c97a28', desc: { en: 'Map features / sectors', es: 'Mapea features / sectores' } },
+        { step: 'Line geometry', color: '#c97a28', desc: { en: 'Line choice through section', es: 'Elección de línea por sección' } },
       ],
     },
   },
@@ -1313,11 +2204,11 @@ function PipelineFlow({ steps, color }) {
             flexShrink: 0,
           }}>
             <span style={{
-              fontFamily: 'Space Mono, monospace', fontSize: 9, color: s.color,
+              fontFamily: 'Space Mono, monospace', fontSize: 11, color: s.color,
               letterSpacing: '0.06em', textAlign: 'center', marginBottom: 5,
             }}>{s.step}</span>
             <span style={{
-              fontFamily: 'Space Grotesk, sans-serif', fontSize: 11, color: '#888',
+              fontFamily: 'Space Grotesk, sans-serif', fontSize: 13, color: '#aaa',
               textAlign: 'center', lineHeight: 1.4,
             }}>{typeof s.desc === 'object' ? (s.desc.es || s.desc.en) : s.desc}</span>
           </div>
@@ -1376,8 +2267,8 @@ function CameraSection({ sport, sc, lang }) {
 
   // Value cell renderer: 0=none, 1=partial, 2=full
   const Cell = ({ v, color }) => {
-    if (v === 2) return <span style={{ color, fontSize: 14 }}>◆</span>;
-    if (v === 1) return <span style={{ color: '#555', fontSize: 14 }} title="partial">◈</span>;
+    if (v === 2) return <span style={{ color, fontSize: 14 }}>?</span>;
+    if (v === 1) return <span style={{ color: '#555', fontSize: 14 }} title="partial">?</span>;
     return <span style={{ color: '#2a2a2a', fontSize: 14 }}>—</span>;
   };
 
@@ -1387,8 +2278,10 @@ function CameraSection({ sport, sc, lang }) {
   return (
     <div style={{ marginBottom: 48 }}>
       {/* Section label */}
-      <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#6b6b6b', letterSpacing: '0.12em', marginBottom: 16 }}>
-        {lang === 'es' ? 'FUENTE DE VIDEO — QUÉ DESBLOQUEA CADA CÁMARA' : 'VIDEO SOURCE — WHAT EACH CAMERA UNLOCKS'}
+      <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 12, color: '#8a8a8a', letterSpacing: '0.12em', marginBottom: 16 }}>
+        {sport === 'downhill'
+          ? (lang === 'es' ? 'FUENTE DE VIDEO — ACTUAL Y ROADMAP POR CÁMARA' : 'VIDEO SOURCE — CURRENT AND ROADMAP BY CAMERA')
+          : (lang === 'es' ? 'FUENTE DE VIDEO — QUÉ DESBLOQUEA CADA CÁMARA' : 'VIDEO SOURCE — WHAT EACH CAMERA UNLOCKS')}
       </div>
 
       {/* Camera matrix table */}
@@ -1396,28 +2289,28 @@ function CameraSection({ sport, sc, lang }) {
         {/* Header row */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: `200px repeat(${sources.length}, 1fr)`,
+          gridTemplateColumns: `240px repeat(${sources.length}, 1fr)`,
           background: '#141414', borderBottom: '1px solid #222',
         }}>
-          <div style={{ padding: '10px 16px', fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#555' }}>
+          <div style={{ padding: '13px 16px', fontFamily: 'Space Mono, monospace', fontSize: 11, color: '#777' }}>
             {lang === 'es' ? 'ANÁLISIS' : 'ANALYSIS'}
           </div>
           {sources.map(src => (
-            <div key={src.id} style={{ padding: '10px 8px', textAlign: 'center' }}>
+            <div key={src.id} style={{ padding: '13px 8px', textAlign: 'center' }}>
               <div style={{
-                fontFamily: 'Space Mono, monospace', fontSize: 9, color: src.recommended ? col : '#555',
+                fontFamily: 'Space Mono, monospace', fontSize: 11, color: src.recommended ? col : '#777',
                 letterSpacing: '0.07em',
               }}>{tl(src.label, lang)}</div>
               <div style={{ marginTop: 4, display: 'flex', justifyContent: 'center', gap: 4 }}>
                 {src.recommended && (
                   <span style={{
-                    fontFamily: 'Space Mono, monospace', fontSize: 7, color: col,
+                    fontFamily: 'Space Mono, monospace', fontSize: 9, color: col,
                     background: col + '15', border: `1px solid ${col}30`,
                     borderRadius: 3, padding: '1px 5px', letterSpacing: '0.06em',
                   }}>{lang === 'es' ? 'RECOMENDADO' : 'RECOMMENDED'}</span>
                 )}
                 <span style={{
-                  fontFamily: 'Space Mono, monospace', fontSize: 7, color: '#444',
+                  fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#666',
                   background: '#161616', border: '1px solid #222',
                   borderRadius: 3, padding: '1px 5px',
                 }}>TIER {src.tier}</span>
@@ -1430,12 +2323,12 @@ function CameraSection({ sport, sc, lang }) {
         {rows.map((row, i) => (
           <div key={i} style={{
             display: 'grid',
-            gridTemplateColumns: `200px repeat(${sources.length}, 1fr)`,
+            gridTemplateColumns: `240px repeat(${sources.length}, 1fr)`,
             borderBottom: i < rows.length - 1 ? '1px solid #1a1a1a' : 'none',
             background: i % 2 ? '#0f0f0f' : 'transparent',
             alignItems: 'center',
           }}>
-            <div style={{ padding: '10px 16px', fontFamily: 'Space Grotesk, sans-serif', fontSize: 12, color: '#888' }}>
+            <div style={{ padding: '16px 18px', fontFamily: 'Space Grotesk, sans-serif', fontSize: 16, color: '#c8c8c0', lineHeight: 1.4 }}>
               {tl(row.label, lang)}
             </div>
             {colKeys.map(key => (
@@ -1451,35 +2344,37 @@ function CameraSection({ sport, sc, lang }) {
           padding: '8px 16px', background: '#0d0d0d', borderTop: '1px solid #1a1a1a',
           display: 'flex', gap: 18, alignItems: 'center',
         }}>
-          <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 8, color: '#333', letterSpacing: '0.08em' }}>
+          <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 12, color: '#777', letterSpacing: '0.08em' }}>
             {lang === 'es' ? 'LEYENDA:' : 'LEGEND:'}
           </span>
           {[
-            { sym: '◆', label: { en: 'Full support', es: 'Soporte completo' }, color: col },
+            { sym: '?', label: { en: 'Full support', es: 'Soporte completo' }, color: col },
             { sym: '◈', label: { en: 'Partial / reduced accuracy', es: 'Parcial / menor precisión' }, color: '#555' },
             { sym: '—', label: { en: 'Not applicable', es: 'No aplica' }, color: '#2a2a2a' },
           ].map((l, i) => (
             <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <span style={{ color: l.color, fontSize: 13 }}>{l.sym}</span>
-              <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 11, color: '#555' }}>{tl(l.label, lang)}</span>
+              <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 15, color: '#999' }}>{tl(l.label, lang)}</span>
             </span>
           ))}
         </div>
       </div>
 
-      {/* Pipeline flows per available camera */}
+      {/* Pipeline flows per camera: DH mixes current live flow with planned camera adapters. */}
       {Object.keys(pipelines).length > 0 && (
         <div>
-          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#6b6b6b', letterSpacing: '0.12em', marginBottom: 14 }}>
-            {lang === 'es' ? 'FLUJO DEL PIPELINE — TIER 0' : 'PIPELINE FLOW — TIER 0'}
+          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 14, color: '#a0a0a0', letterSpacing: '0.12em', marginBottom: 16 }}>
+            {sport === 'downhill'
+              ? (lang === 'es' ? 'FLUJOS POR CÁMARA — ACTUAL + ROADMAP' : 'CAMERA FLOWS — CURRENT + ROADMAP')
+              : (lang === 'es' ? 'FLUJO DEL PIPELINE — TIER 0' : 'PIPELINE FLOW — TIER 0')}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {Object.entries(pipelines).map(([camId, steps]) => {
               const camSrc = sources.find(s => s.id === camId);
               if (!camSrc) return null;
               return (
-                <div key={camId} style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', borderRadius: 8, padding: '14px 16px' }}>
-                  <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#555', letterSpacing: '0.08em', marginBottom: 12 }}>
+                <div key={camId} style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', borderRadius: 8, padding: '18px 20px' }}>
+                  <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 13, color: '#999', letterSpacing: '0.08em', marginBottom: 14 }}>
                     {tl(camSrc.label, lang).toUpperCase()}
                   </div>
                   <PipelineFlowLang steps={steps} lang={lang} />
@@ -1507,13 +2402,14 @@ const SPORT_TIERS = {
         { en: 'Track width utilization score', es: 'Score de uso del ancho de pista' },
         { en: 'Gap to kart ahead (GAP BAR)', es: 'Gap al kart de adelante (GAP BAR)' },
         { en: 'Kerb contact detection L/R', es: 'Detección de contacto con kerb izq/der' },
-        { en: 'SAM3 text-prompt segmentation (custom prompt supported)', es: 'Segmentación por text-prompt SAM3 (prompt personalizable)' },
+        { en: 'SAM segmentation by camera view: FPV follow and GoPro action cam both supported today', es: 'Segmentación SAM por vista de cámara: hoy se soportan tanto FPV follow como GoPro action cam' },
+        { en: 'No human pose model: karting value comes from kart geometry, track mask, kerbs and gap.', es: 'Sin modelo de pose humana: el valor en karting viene de geometría del kart, máscara de pista, kerbs y gap.' },
         { en: 'LLM summary · auto (metrics only, no image) + VLM on-demand frame analysis (image + time-window metrics)', es: 'Resumen LLM · automático (solo métricas, sin imagen) + análisis VLM de frame bajo demanda (imagen + métricas de ventana temporal)' },
       ],
       limits: [
         { en: 'No lap timing or corner mapping', es: 'Sin tiempo por vuelta ni mapa de curvas' },
         { en: 'No track-specific model (zero-shot only)', es: 'Sin modelo específico del kartodromo (solo zero-shot)' },
-        { en: 'LAT POS loses accuracy on GoPro POV', es: 'LAT POS pierde precisión en vista GoPro' },
+        { en: 'GoPro detects visible karts ahead; own-kart position is inferred from road geometry, not directly detected.', es: 'GoPro detecta karts visibles adelante; la posición propia se infiere por geometría de pista, no se detecta directamente.' },
       ],
     },
     {
@@ -1580,35 +2476,38 @@ const SPORT_TIERS = {
       tier: 0,
       status: 'live',
       statusLabel: { en: 'LIVE NOW', es: 'EN VIVO' },
-      input: { en: 'Any video — no labelled data required', es: 'Cualquier video — sin datos etiquetados' },
-      tech: ['MediaPipe Pose', 'Terrain classifier (HSV)', 'Groq llama-4-scout'],
+      input: { en: 'Base DH review: any video — no labelled data required', es: 'Revisión DH base: cualquier video — sin datos etiquetados' },
+      tech: ['YOLO Pose', 'Line proxy', 'Groq llama-4-scout'],
       features: [
-        { en: 'Body pose: 17 keypoints per frame', es: 'Pose corporal: 17 puntos clave por frame' },
+        { en: 'Body pose only when the rider is externally visible; GoPro mainly provides POV cues.', es: 'Pose corporal solo cuando el rider se ve desde fuera; GoPro principalmente aporta señales POV.' },
         { en: 'Balance score (hip/shoulder alignment)', es: 'Score de balance (alineación cadera/hombros)' },
-        { en: 'Line efficiency (path relative to terrain)', es: 'Eficiencia de línea (trayectoria vs. terreno)' },
-        { en: 'Terrain context cues (rock, root, drop)', es: 'Señales de terreno (piedra, raíz, caída)' },
+        { en: 'Line efficiency from rider trajectory proxy.', es: 'Eficiencia de línea desde proxy de trayectoria.' },
+        { en: 'Terrain context is heuristic from speed/posture buckets.', es: 'El contexto de terreno es heurístico desde buckets de velocidad/postura.' },
         { en: 'VLM coaching · 1 call per video', es: 'Coaching VLM · 1 llamada por video' },
       ],
       limits: [
         { en: 'No per-section breakdown (whole run only)', es: 'Sin desglose por sección (solo la bajada completa)' },
-        { en: 'Terrain classifier is zero-shot, not trained', es: 'Clasificador de terreno zero-shot, no entrenado' },
+        { en: 'For visual trail isolation choose Premium/SAM.', es: 'Para aislamiento visual del sendero elige Premium/SAM.' },
         { en: 'No speed or G-force data', es: 'Sin datos de velocidad o G' },
       ],
     },
     {
       tier: 1,
-      status: 'planned',
-      statusLabel: { en: '~3M', es: '~3M' },
-      input: { en: '100+ annotated stances + terrain-labelled footage', es: '100+ posturas anotadas + footage con etiquetas de terreno' },
-      tech: ['Fine-tuned pose model', 'Terrain segmentation', 'Section detector', 'Groq VLM'],
+      status: 'live',
+      statusLabel: { en: 'PREMIUM', es: 'PREMIUM' },
+      input: { en: 'Camera-specific DH Premium: follow drone, GoPro POV, front/overhead drone', es: 'DH Premium por cámara: dron seguimiento, GoPro POV, dron frontal/cenital' },
+      tech: ['SAM trail mask', 'Pose model where body is visible', 'Section detector', 'Groq VLM'],
       features: [
-        { en: 'Per-section posture scoring (rock vs. root vs. drop)', es: 'Score de postura por sección (piedra / raíz / caída)' },
-        { en: 'Posture trend across the full session', es: 'Tendencia postural en toda la sesión' },
+        { en: 'Follow drone: strongest pose + line view when the full rider is visible from outside', es: 'Dron seguimiento: la vista más fuerte para pose + línea cuando el rider se ve completo desde fuera' },
+        { en: 'GoPro: SAM trail/obstacle mask + line preview; no full-body posture claim', es: 'GoPro: máscara SAM de sendero/obstáculos + línea próxima; sin prometer postura de cuerpo completo' },
+        { en: 'Front/overhead drone: SAM corridor + trajectory geometry + section mapping, weaker posture detail', es: 'Dron frontal/cenital: corredor SAM + geometría de trayectoria + mapeo de secciones, menor detalle postural' },
+        { en: 'Per-section posture scoring only where an external body view exists', es: 'Score de postura por sección solo donde existe vista externa del cuerpo' },
         { en: 'Run-over-run comparison', es: 'Comparación bajada a bajada' },
         { en: 'Terrain-specific guidance per section type', es: 'Guía específica por tipo de terreno' },
       ],
       limits: [
-        { en: 'Requires labelled footage from similar trails', es: 'Requiere footage etiquetado de senderos similares' },
+        { en: 'Quality depends on visibility, shadows and how clearly the trail separates from vegetation.', es: 'La calidad depende de visibilidad, sombras y qué tan claro se separa el sendero de la vegetación.' },
+        { en: 'GoPro and front/overhead already use SAM; follow-drone remains the strongest view for pose.', es: 'GoPro y frontal/cenital ya usan SAM; follow-drone sigue siendo la toma más fuerte para pose.' },
         { en: 'No sensor data (vision only)', es: 'Sin sensores (solo visión)' },
       ],
     },
@@ -1825,34 +2724,34 @@ function TierBlock({ tier, sc, lang }) {
   return (
     <div style={{
       border: `1px solid ${isLive ? col + '55' : '#1e1e1e'}`,
-      borderRadius: 8, overflow: 'hidden',
+      borderRadius: 10, overflow: 'hidden',
       background: isLive ? col + '07' : '#0d0d0d',
     }}>
       {/* Header */}
       <div style={{
-        padding: '10px 18px', background: '#141414', borderBottom: '1px solid #1a1a1a',
+        padding: '18px 24px', background: '#141414', borderBottom: '1px solid #1a1a1a',
         display: 'flex', alignItems: 'center', gap: 14,
       }}>
-        <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 12, color: dim ? '#555' : col, letterSpacing: '0.1em', flexShrink: 0 }}>
+        <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 15, color: dim ? '#777' : col, letterSpacing: '0.1em', flexShrink: 0 }}>
           TIER {tier.tier}
         </span>
         <span style={{
-          fontFamily: 'Space Mono, monospace', fontSize: 9, letterSpacing: '0.07em',
+          fontFamily: 'Space Mono, monospace', fontSize: 12, letterSpacing: '0.07em',
           color: statusColor, border: `1px solid ${statusColor}50`, borderRadius: 3, padding: '2px 9px', flexShrink: 0,
         }}>
           {tl(tier.statusLabel, lang)}
         </span>
-        <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 14, color: dim ? '#999' : '#ccc', flex: 1 }}>
+        <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 18, color: dim ? '#b8b8b0' : '#e6e3dc', flex: 1, lineHeight: 1.35 }}>
           {tl(tier.input, lang)}
         </span>
       </div>
 
       {/* Body: 3 columns */}
-      <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr 1fr', gap: 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: 0 }}>
 
         {/* Tech stack */}
-        <div style={{ padding: '16px 18px', borderRight: '1px solid #1a1a1a' }}>
-          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: dim ? '#666' : '#777', letterSpacing: '0.09em', marginBottom: 12 }}>
+        <div style={{ padding: '22px 24px', borderRight: '1px solid #1a1a1a' }}>
+          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 13, color: dim ? '#888' : '#aaa', letterSpacing: '0.09em', marginBottom: 16 }}>
             {lang === 'es' ? 'TECNOLOGÍAS' : 'TECH STACK'}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1863,7 +2762,7 @@ function TierBlock({ tier, sc, lang }) {
                   onClick={() => hasModal && setModalTerm(t)}
                   title={hasModal ? (lang === 'es' ? 'Haz clic para saber más' : 'Click to learn more') : undefined}
                   style={{
-                    fontFamily: 'Space Mono, monospace', fontSize: 10,
+                    fontFamily: 'Space Mono, monospace', fontSize: 13,
                     color: dim ? '#aaa' : col,
                     background: dim ? '#1c1c1c' : col + '12',
                     border: `1px solid ${dim ? '#333' : col + '25'}`,
@@ -1874,7 +2773,7 @@ function TierBlock({ tier, sc, lang }) {
                   }}>
                   {t}
                   {hasModal && (
-                    <span style={{ fontSize: 9, opacity: 0.45, fontFamily: 'sans-serif' }}>?</span>
+                    <span style={{ fontSize: 10, opacity: 0.65, fontFamily: 'Space Mono, monospace' }}>i</span>
                   )}
                 </span>
               );
@@ -1883,15 +2782,15 @@ function TierBlock({ tier, sc, lang }) {
         </div>
 
         {/* Features */}
-        <div style={{ padding: '16px 18px', borderRight: '1px solid #1a1a1a' }}>
-          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: dim ? '#666' : '#777', letterSpacing: '0.09em', marginBottom: 12 }}>
-            {lang === 'es' ? (isLive ? 'LO QUE YA HACE' : 'LO QUE HARÁ') : (isLive ? 'WHAT IT DOES' : 'WHAT IT WILL DO')}
+        <div style={{ padding: '22px 24px', borderRight: '1px solid #1a1a1a' }}>
+          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 13, color: dim ? '#888' : '#aaa', letterSpacing: '0.09em', marginBottom: 16 }}>
+            {lang === 'es' ? 'QUÉ ENTREGA' : 'WHAT YOU GET'}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {tier.features.map((f, i) => (
               <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                <span style={{ color: dim ? '#666' : col, fontSize: 10, flexShrink: 0, marginTop: 2 }}>◆</span>
-                <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 14, color: dim ? '#aaa' : '#EDEDE8', lineHeight: 1.45 }}>
+                <span style={{ color: dim ? '#666' : col, fontSize: 12, flexShrink: 0, marginTop: 3 }}>◆</span>
+                <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 17, color: dim ? '#c8c8c0' : '#F4F1EA', lineHeight: 1.55 }}>
                   {tl(f, lang)}
                 </span>
               </div>
@@ -1900,19 +2799,19 @@ function TierBlock({ tier, sc, lang }) {
         </div>
 
         {/* Requirements / Limitations */}
-        <div style={{ padding: '16px 18px' }}>
-          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: dim ? '#666' : '#777', letterSpacing: '0.09em', marginBottom: 12 }}>
+        <div style={{ padding: '22px 24px' }}>
+          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 13, color: dim ? '#888' : '#aaa', letterSpacing: '0.09em', marginBottom: 16 }}>
             {isLive
-              ? (lang === 'es' ? 'LIMITACIONES ACTUALES' : 'CURRENT LIMITATIONS')
-              : (lang === 'es' ? 'PARA LLEGAR A ESTE TIER' : 'REQUIREMENTS TO REACH')}
+              ? (lang === 'es' ? 'LÍMITES A CONSIDERAR' : 'LIMITS TO CONSIDER')
+              : (lang === 'es' ? 'REQUISITOS / LÍMITES' : 'REQUIREMENTS / LIMITS')}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {tier.limits.map((l, i) => (
               <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                <span style={{ color: isLive ? '#ef6444' : '#eab308', fontSize: 10, flexShrink: 0, marginTop: 2 }}>
+                <span style={{ color: isLive ? '#ef6444' : '#eab308', fontSize: 13, flexShrink: 0, marginTop: 3 }}>
                   {isLive ? '!' : '→'}
                 </span>
-                <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 14, color: dim ? '#aaa' : '#bbb', lineHeight: 1.45 }}>
+                <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 17, color: dim ? '#c8c8c0' : '#d8d6ce', lineHeight: 1.55 }}>
                   {tl(l, lang)}
                 </span>
               </div>
@@ -1934,10 +2833,239 @@ function TierBlock({ tier, sc, lang }) {
   );
 }
 
-export function MethodPage({ state }) {
+const CAMERA_TIER_GUIDES = {
+  karting: {
+    fpv_follow: [
+      {
+        tier: '0',
+        status: 'live',
+        statusLabel: { en: 'LIVE NOW', es: 'EN VIVO' },
+        input: { en: 'FPV / follow drone video from above-behind', es: 'Video FPV / dron de seguimiento desde arriba-atrás' },
+        tech: ['YOLO11n', 'ByteTrack', 'SAM3.1 + HSV', 'Groq LLM + VLM'],
+        features: [
+          { en: 'Track mask with SAM on FPV footage', es: 'Máscara de pista con SAM sobre footage FPV' },
+          { en: 'Kart detection + stable lateral-position proxy', es: 'Detección de kart + proxy estable de posición lateral' },
+          { en: 'Line consistency and track-width use', es: 'Consistencia de línea y uso del ancho de pista' },
+        ],
+        limits: [
+          { en: 'No lap timing or corner map yet', es: 'Aún sin tiempo por vuelta ni mapa de curvas' },
+          { en: 'Focus is kart path, not driver body pose', es: 'El foco es la trayectoria del kart, no la pose del piloto' },
+        ],
+      },
+      {
+        tier: '1',
+        status: 'planned',
+        statusLabel: { en: 'NEXT', es: 'SIGUIENTE' },
+        input: { en: 'Same camera + track-specific labels', es: 'La misma cámara + etiquetas específicas del circuito' },
+        tech: ['YOLO11 fine-tuned', 'Corner segmentation', 'Groq VLM'],
+        features: [
+          { en: 'Per-corner breakdown and sector coaching', es: 'Desglose por curva y coaching por sector' },
+          { en: 'Track-specific line model instead of zero-shot only', es: 'Modelo de línea específico del circuito, no solo zero-shot' },
+        ],
+        limits: [
+          { en: 'Needs labelled data from that circuit', es: 'Necesita datos etiquetados de ese circuito' },
+        ],
+      },
+      {
+        tier: '2',
+        status: 'roadmap',
+        statusLabel: { en: 'HARDWARE+', es: 'HARDWARE+' },
+        input: { en: 'FPV + overhead + GPS/OBD fusion', es: 'FPV + cenital + fusión GPS/OBD' },
+        tech: ['Multi-cam fusion', 'GPS/OBD integration', 'Expert line model'],
+        features: [
+          { en: 'Delta vs ideal line and session progression', es: 'Delta vs línea ideal y progresión entre sesiones' },
+        ],
+        limits: [
+          { en: 'Requires track hardware and calibration', es: 'Requiere hardware e instalación en pista' },
+        ],
+      },
+    ],
+    action_cam: [
+      {
+        tier: '0',
+        status: 'live',
+        statusLabel: { en: 'LIVE NOW', es: 'EN VIVO' },
+        input: { en: 'GoPro / helmet action-cam footage', es: 'Footage GoPro / action cam de casco' },
+        tech: ['SAM3.1 + HSV', 'YOLO11n', 'ByteTrack', 'Groq LLM + VLM'],
+        features: [
+          { en: 'SAM track mask on the road ahead', es: 'Máscara SAM de la pista adelante' },
+          { en: 'Apex direction, kerb L/R and gap to visible karts', es: 'Dirección de ápex, kerb izq/der y gap a karts visibles' },
+          { en: 'Own-kart position inferred from view geometry', es: 'Posición propia inferida por geometría de vista' },
+        ],
+        limits: [
+          { en: 'Not a direct physical own-kart detector', es: 'No detecta directamente un punto físico del kart propio' },
+          { en: 'Weaker than overhead for absolute race geometry', es: 'Más débil que una cenital para geometría absoluta de carrera' },
+        ],
+      },
+      {
+        tier: '1',
+        status: 'planned',
+        statusLabel: { en: 'NEXT', es: 'SIGUIENTE' },
+        input: { en: 'Same camera + track-specific visual landmarks', es: 'La misma cámara + landmarks visuales del circuito' },
+        tech: ['Corner segmentation', 'Lap timer', 'Groq VLM'],
+        features: [
+          { en: 'Corner-by-corner narrative from POV footage', es: 'Narrativa curva por curva desde POV' },
+          { en: 'Gap trends and overtaking-context flags', es: 'Tendencias de gap y alertas de contexto de sobrepaso' },
+        ],
+        limits: [
+          { en: 'Still vision-only; no throttle/brake telemetry', es: 'Sigue siendo solo visión; sin telemetría de acelerador/freno' },
+        ],
+      },
+      {
+        tier: '2',
+        status: 'roadmap',
+        statusLabel: { en: 'OVERHEAD+', es: 'CENITAL+' },
+        input: { en: 'GoPro + overhead race view + sensors', es: 'GoPro + vista cenital de carrera + sensores' },
+        tech: ['Multi-cam fusion', 'GPS/OBD integration', 'Expert line model'],
+        features: [
+          { en: 'POV decisions tied to full-race geometry', es: 'Decisiones POV conectadas con la geometría completa de carrera' },
+        ],
+        limits: [
+          { en: 'Requires additional cameras and calibrated track references', es: 'Requiere cámaras adicionales y referencias calibradas' },
+        ],
+      },
+    ],
+    overhead_drone: [
+      {
+        tier: '1',
+        status: 'planned',
+        statusLabel: { en: 'PLANNED', es: 'PLANIFICADO' },
+        input: { en: 'Overhead drone over sector or full circuit', es: 'Dron cenital sobre sector o circuito completo' },
+        tech: ['SAM3.1 + HSV', 'YOLO11n', 'ByteTrack'],
+        features: [
+          { en: 'Best geometry view for sectors, trajectories and multi-kart structure', es: 'La mejor vista geométrica para sectores, trayectorias y estructura multi-kart' },
+        ],
+        limits: [
+          { en: 'Not yet exposed as a live production flow', es: 'Aún no está expuesto como flujo live de producción' },
+        ],
+      },
+    ],
+  },
+  downhill: {
+    drone_follow: [
+      {
+        tier: '0',
+        status: 'live',
+        statusLabel: { en: 'LIVE NOW', es: 'EN VIVO' },
+        input: { en: 'Follow drone with rider visible from outside', es: 'Dron de seguimiento con el rider visible desde fuera' },
+        tech: ['YOLO Pose', 'Line proxy', 'Groq llama-4-scout'],
+        features: [
+          { en: 'Strongest current view for posture + line together', es: 'La toma actual más fuerte para postura + línea juntas' },
+          { en: 'Balance, body timing and commitment moments', es: 'Balance, timing corporal y momentos de compromiso' },
+        ],
+        limits: [
+          { en: 'Trail isolation is weaker here than in POV / front-overhead SAM views', es: 'El aislamiento de sendero aquí es más débil que en POV / frontal-cenital con SAM' },
+        ],
+      },
+      {
+        tier: '1',
+        status: 'live',
+        statusLabel: { en: 'PREMIUM', es: 'PREMIUM' },
+        input: { en: 'Follow drone + clearer corridor visibility', es: 'Dron de seguimiento + mejor visibilidad del corredor' },
+        tech: ['Pose model', 'Section detector', 'Groq VLM'],
+        features: [
+          { en: 'Per-section posture scoring where the rider is visible', es: 'Score de postura por sección cuando el rider se ve bien' },
+          { en: 'Run-over-run comparison', es: 'Comparación bajada a bajada' },
+        ],
+        limits: [
+          { en: 'Depends heavily on how cleanly the rider stays visible', es: 'Depende mucho de qué tan limpio se ve al rider' },
+        ],
+      },
+    ],
+    helmet_cam: [
+      {
+        tier: '0',
+        status: 'live',
+        statusLabel: { en: 'LIVE NOW', es: 'EN VIVO' },
+        input: { en: 'Helmet / chest GoPro POV', es: 'GoPro POV de casco / pecho' },
+        tech: ['SAM trail mask', 'Line proxy', 'Groq VLM'],
+        features: [
+          { en: 'SAM trail and obstacle isolation from POV footage', es: 'Aislamiento SAM de sendero y obstáculos desde POV' },
+          { en: 'Line preview, danger cues and section reading ahead', es: 'Línea próxima, señales de riesgo y lectura de sección' },
+        ],
+        limits: [
+          { en: 'No full-body posture claim from POV footage', es: 'No promete postura corporal completa desde POV' },
+        ],
+      },
+      {
+        tier: '1',
+        status: 'planned',
+        statusLabel: { en: 'NEXT', es: 'SIGUIENTE' },
+        input: { en: 'Same POV + more stable trail prompts', es: 'El mismo POV + prompts más estables de sendero' },
+        tech: ['SAM prompt presets', 'Section detector', 'Groq VLM'],
+        features: [
+          { en: 'Stronger section-by-section trail interpretation', es: 'Interpretación de sendero más fuerte por sección' },
+        ],
+        limits: [
+          { en: 'Still a rider-view system, not an external-pose system', es: 'Sigue siendo un sistema POV, no uno de pose externa' },
+        ],
+      },
+    ],
+    drone_front_overhead: [
+      {
+        tier: '0',
+        status: 'live',
+        statusLabel: { en: 'LIVE NOW', es: 'EN VIVO' },
+        input: { en: 'Front or overhead drone over a DH section', es: 'Dron frontal o cenital sobre una sección DH' },
+        tech: ['SAM trail mask', 'Section geometry', 'Groq VLM'],
+        features: [
+          { en: 'Best current DH camera for corridor geometry and section mapping', es: 'La mejor cámara DH actual para geometría de corredor y mapeo de secciones' },
+          { en: 'Trajectory review with SAM context', es: 'Revisión de trayectoria con contexto SAM' },
+        ],
+        limits: [
+          { en: 'Weaker posture detail than follow-drone', es: 'Menor detalle postural que el dron de seguimiento' },
+        ],
+      },
+      {
+        tier: '1',
+        status: 'planned',
+        statusLabel: { en: 'NEXT', es: 'SIGUIENTE' },
+        input: { en: 'Same camera + repeated runs through same feature', es: 'La misma cámara + repeticiones del mismo feature' },
+        tech: ['Section detector', 'Trajectory comparator'],
+        features: [
+          { en: 'Entry/exit comparison across repeated attempts', es: 'Comparación entrada/salida entre intentos repetidos' },
+        ],
+        limits: [
+          { en: 'Best per-section, not whole-mountain from one angle', es: 'Mejor por sección, no para toda la montaña desde un solo ángulo' },
+        ],
+      },
+    ],
+  },
+};
+
+function CameraTierRoadmap({ sport, cameraMode, sc, lang }) {
+  const tiers = CAMERA_TIER_GUIDES[sport]?.[cameraMode] || [];
+  if (!tiers.length) return null;
+  return (
+    <div style={{ marginBottom: 48 }}>
+      <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 14, color: sc.color, letterSpacing: '0.12em', marginBottom: 20 }}>
+        {lang === 'es' ? 'ROADMAP POR CÁMARA' : 'CAMERA-SPECIFIC ROADMAP'}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {tiers.map(tier => (
+          <TierBlock key={`${cameraMode}-${tier.tier}`} tier={tier} sc={sc} lang={lang} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function MethodPage({ state, setState }) {
   const { sport, lang } = state;
   const sc = SPORTS[sport];
-  const tiers = SPORT_TIERS[sport] || SPORT_TIERS.downhill;
+  const cameraModes = CAMERA_MODES[sport] || [];
+  const [methodCamera, setMethodCamera] = useState(() => {
+    const first = cameraModes.find(m => m.available) || cameraModes[0];
+    return first?.id || null;
+  });
+
+  useEffect(() => {
+    const modes = CAMERA_MODES[sport] || [];
+    const first = modes.find(m => m.available) || modes[0];
+    setMethodCamera(first?.id || null);
+  }, [sport]);
+
+  const tiers = CAMERA_TIER_GUIDES[sport]?.[methodCamera] || SPORT_TIERS[sport] || SPORT_TIERS.downhill;
 
   const CAP_MATRIX = [
     { en: 'Video analysis',       es: 'Análisis de video',        dh: true,  kt: true,  sf: true  },
@@ -1952,23 +3080,88 @@ export function MethodPage({ state }) {
   ];
 
   const sportList = Object.values(SPORTS);
+  const sportSelectorTitle = lang === 'es' ? 'ELIGE DISCIPLINA' : 'CHOOSE DISCIPLINE';
+  const sportSelectorCopy = lang === 'es'
+    ? 'Primero elige el deporte. Luego mostramos qué cámaras sirven, qué entrega cada tier y dónde están los límites reales.'
+    : 'Start with the sport. Then we show which cameras work, what each tier delivers, and where the real limits are.';
 
   return (
     <div style={{ padding: '52px 0 0', minHeight: '100vh' }}>
-      <div style={{ maxWidth: 1120, margin: '0 auto', padding: '48px 40px' }}>
+      <div style={{ maxWidth: 1120, margin: '0 auto', padding: '56px 38px' }}>
 
         <div style={{ marginBottom: 36 }}>
-          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 11, color: '#6b6b6b', letterSpacing: '0.12em', marginBottom: 10 }}>
-            {lang === 'es' ? 'ARQUITECTURA' : 'SYSTEM ARCHITECTURE'}
+          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 14, color: '#a0a0a0', letterSpacing: '0.12em', marginBottom: 14 }}>
+            {lang === 'es' ? 'CÓMO SE HACE' : 'HOW IT WORKS'}
           </div>
-          <h2 style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 30, fontWeight: 700, color: '#EDEDE8', margin: 0 }}>
-            {lang === 'es' ? 'Cómo funciona' : 'How it works'}
+          <h2 style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 44, fontWeight: 700, color: '#F4F1EA', margin: 0, lineHeight: 1.08 }}>
+            {lang === 'es' ? 'Qué se puede medir con cada cámara' : 'What each camera can measure'}
           </h2>
+          <p style={{ margin: '12px 0 0', maxWidth: 860, fontFamily: 'Space Grotesk, sans-serif', fontSize: 18, color: '#c8c8c0', lineHeight: 1.65 }}>
+            {lang === 'es'
+              ? 'Primero mostramos valor deportivo. La tecnología aparece aquí para explicar límites y confianza, no para decorar.'
+              : 'Athlete value comes first. Technology is shown here to explain limits and confidence, not as decoration.'}
+          </p>
+        </div>
+
+        <div style={{ marginBottom: 40 }}>
+          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 13, color: '#a0a0a0', letterSpacing: '0.12em', marginBottom: 10 }}>
+            {sportSelectorTitle}
+          </div>
+          <p style={{ margin: '0 0 18px', maxWidth: 820, fontFamily: 'Space Grotesk, sans-serif', fontSize: 17, color: '#9a9a92', lineHeight: 1.6 }}>
+            {sportSelectorCopy}
+          </p>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gap: 12,
+          }}>
+            {sportList.map(item => {
+              const active = item.id === sport;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setState(s => ({ ...s, sport: item.id }))}
+                  style={{
+                    textAlign: 'left',
+                    background: active ? `${item.colorHex}12` : '#101010',
+                    border: `1px solid ${active ? item.color : '#202020'}`,
+                    borderRadius: 8,
+                    padding: '18px 18px 16px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10,
+                    minHeight: 148,
+                    boxShadow: active ? `0 0 0 1px ${item.color}20 inset` : 'none',
+                  }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                    <div>
+                      <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 11, color: item.color, letterSpacing: '0.12em', marginBottom: 8 }}>
+                        {item.abbr}
+                      </div>
+                      <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 24, fontWeight: 600, color: '#F4F1EA', lineHeight: 1.1 }}>
+                        {tl(item.label, lang)}
+                      </div>
+                    </div>
+                    <StatusPill readiness={item.readiness} lang={lang} />
+                  </div>
+                  <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 15, color: '#b8b8b0', lineHeight: 1.55 }}>
+                    {tl(item.tagline, lang)}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {item.capabilities.slice(0, 2).map(cap => (
+                      <CapChip key={cap.id} cap={cap} sport={item.id} lang={lang} compact />
+                    ))}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Tier flows */}
         <div style={{ marginBottom: 48 }}>
-          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 11, color: sc.color, letterSpacing: '0.12em', marginBottom: 16 }}>
+          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 14, color: sc.color, letterSpacing: '0.12em', marginBottom: 20 }}>
             {tl(sc.label, lang).toUpperCase()} — {lang === 'es' ? 'PLAN DE CAPACIDADES POR TIER' : 'CAPABILITY ROADMAP BY TIER'}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1983,14 +3176,14 @@ export function MethodPage({ state }) {
 
         {/* Capability matrix */}
         <div style={{ marginBottom: 48 }}>
-          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#6b6b6b', letterSpacing: '0.12em', marginBottom: 16 }}>
+          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 14, color: '#a0a0a0', letterSpacing: '0.12em', marginBottom: 18 }}>
             {lang === 'es' ? 'MATRIZ DE CAPACIDADES POR DEPORTE' : 'CAPABILITY MATRIX BY SPORT'}
           </div>
           <div style={{ border: '1px solid #222', borderRadius: 8, overflow: 'hidden' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '220px repeat(3, 1fr)', background: '#161616', borderBottom: '1px solid #222' }}>
-              <div style={{ padding: '10px 16px', fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#6b6b6b' }}>CAPABILITY</div>
+              <div style={{ padding: '14px 18px', fontFamily: 'Space Mono, monospace', fontSize: 13, color: '#a0a0a0' }}>CAPABILITY</div>
               {sportList.map(s => (
-                <div key={s.id} style={{ padding: '10px 0', fontFamily: 'Space Mono, monospace', fontSize: 9, color: s.color, textAlign: 'center', letterSpacing: '0.08em' }}>
+                <div key={s.id} style={{ padding: '14px 0', fontFamily: 'Space Mono, monospace', fontSize: 13, color: s.color, textAlign: 'center', letterSpacing: '0.08em' }}>
                   {s.abbr}
                 </div>
               ))}
@@ -2002,13 +3195,13 @@ export function MethodPage({ state }) {
                 background: i % 2 ? '#0f0f0f' : 'transparent',
                 alignItems: 'center',
               }}>
-                <div style={{ padding: '11px 16px', fontFamily: 'Space Grotesk, sans-serif', fontSize: 13, color: '#a1a1a1' }}>
+                <div style={{ padding: '14px 18px', fontFamily: 'Space Grotesk, sans-serif', fontSize: 16, color: '#c8c8c0' }}>
                   {row[lang] || row.en}
                 </div>
                 {[row.dh, row.kt, row.sf].map((has, j) => {
                   const s = sportList[j];
                   return (
-                    <div key={j} style={{ textAlign: 'center', fontSize: 13 }}>
+                    <div key={j} style={{ textAlign: 'center', fontSize: 16 }}>
                       <span style={{ color: has ? s.color : '#222' }}>{has ? '◆' : '—'}</span>
                     </div>
                   );
@@ -2020,10 +3213,10 @@ export function MethodPage({ state }) {
 
         {/* Session model */}
         <div style={{ padding: '20px 22px', border: '1px solid #222', borderRadius: 8, background: '#0d142180' }}>
-          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#6b6b6b', letterSpacing: '0.1em', marginBottom: 14 }}>
+          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 12, color: '#8a8a8a', letterSpacing: '0.1em', marginBottom: 14 }}>
             {lang === 'es' ? 'MODELO DE SESIÓN' : 'SESSION MODEL'}
           </div>
-          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 12, lineHeight: 1.9, color: '#555' }}>
+          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 14, lineHeight: 1.9, color: '#777' }}>
             <span style={{ color: '#a1a1a1' }}>session</span> {'{'}<br />
             {'  '}<span style={{ color: '#6b6b6b' }}>session_id</span><span style={{ color: '#3a3a3a' }}>:</span> <span style={{ color: '#888' }}>YYYYMMDD_HHMMSS</span><br />
             {'  '}<span style={{ color: '#6b6b6b' }}>sport</span><span style={{ color: '#3a3a3a' }}>:</span> <span style={{ color: '#888' }}>downhill | karting | surf</span><br />
@@ -2038,3 +3231,4 @@ export function MethodPage({ state }) {
     </div>
   );
 }
+

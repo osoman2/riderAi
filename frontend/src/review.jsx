@@ -247,8 +247,11 @@ function parseGuidance(text) {
 }
 
 function buildReviewFromSession(session) {
+  const isPovCamera = session.mode === 'helmet_cam'
+    || /go[\s_-]?pro|helmet|casco/i.test(session.original_filename || '');
+  const isSamTrailReview = session.sport === 'downhill' && session.sam?.applied;
   const scores = [];
-  if (session.avg_balance_score != null)
+  if (!isPovCamera && session.avg_balance_score != null)
     scores.push({ key: 'posture', value: Math.round(session.avg_balance_score), label: { en: 'POSTURE', es: 'POSTURA' } });
   if (session.avg_line_efficiency_score != null)
     scores.push({ key: 'line', value: Math.min(100, Math.round(session.avg_line_efficiency_score)), label: { en: 'LINE', es: 'LÍNEA' } });
@@ -262,7 +265,7 @@ function buildReviewFromSession(session) {
     .filter((_, i) => i % Math.max(1, Math.floor(features.length / 20)) === 0)
     .slice(0, 20);
 
-  const frames = features
+  const frames = (isPovCamera || isSamTrailReview ? [] : features)
     .filter(f => f.posture_label != null)
     .filter((_, i) => i % Math.max(1, Math.floor(features.length / 6)) === 0)
     .slice(0, 4)
@@ -276,14 +279,35 @@ function buildReviewFromSession(session) {
       };
     });
 
-  const guidance = parseGuidance(session.coaching_summary);
+  let guidance = parseGuidance(session.coaching_summary);
+  if (!guidance.length && isSamTrailReview) {
+    const m = session.sam?.metrics || {};
+    guidance = [
+      {
+        type: 'ok',
+        text: m.continuity != null && m.continuity < 0.7
+          ? (session.mode === 'helmet_cam'
+              ? 'Usa el overlay SAM solo en tramos donde el sendero se ve continuo; sombras y vibración pueden cortar la máscara.'
+              : 'La máscara SAM ayuda a ubicar el corredor, pero revisa continuidad antes de sacar conclusiones de línea.')
+          : 'El overlay SAM permite revisar el corredor transitable y anticipar obstáculos visibles.',
+      },
+      {
+        type: 'improve',
+        text: 'Revisa entrada y salida de cada sección comparando el centro visual del sendero contra la línea que elegiste.',
+      },
+      {
+        type: 'improve',
+        text: 'No uses esta toma para postura corporal completa; en GoPro el valor está en lectura de sendero, obstáculos y timing.',
+      },
+    ];
+  }
 
-  return { scores, trend, frames, guidance };
+  return { scores, trend, frames, guidance, isPovCamera, isSamTrailReview };
 }
 
 // ── Sync Video Player ─────────────────────────────────────────────────────────
 
-function SyncVideoPlayer({ sessionId, lang, sportColor }) {
+function SyncVideoPlayer({ sessionId, sessionData, lang, sportColor }) {
   const v1Ref = useRef(null);
   const v2Ref = useRef(null);
   const [playing, setPlaying] = useState(false);
@@ -292,7 +316,14 @@ function SyncVideoPlayer({ sessionId, lang, sportColor }) {
   const [currentTime, setCurrentTime] = useState(0);
 
   const inputSrc = videoUrl(sessionId, 'input');
-  const annotatedSrc = videoUrl(sessionId, 'annotated');
+  const hasSamOverlay = sessionData?.sam?.applied && sessionData?.sam?.artifact;
+  const analysisKind = hasSamOverlay ? 'sam' : sessionData?.no_pose_pipeline ? 'input' : 'annotated';
+  const analysisSrc = videoUrl(sessionId, analysisKind);
+  const analysisLabel = hasSamOverlay
+    ? (lang === 'es' ? 'SENDERO SAM' : 'SAM TRAIL')
+    : sessionData?.no_pose_pipeline
+      ? (lang === 'es' ? 'REFERENCIA' : 'REFERENCE')
+    : (lang === 'es' ? 'ANOTADO' : 'ANNOTATED');
 
   function fmt(s) {
     const m = Math.floor(s / 60);
@@ -334,7 +365,7 @@ function SyncVideoPlayer({ sessionId, lang, sportColor }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
         {[
           { ref: v1Ref, src: inputSrc, label: lang === 'es' ? 'ENTRADA' : 'INPUT', primary: true },
-          { ref: v2Ref, src: annotatedSrc, label: lang === 'es' ? 'ANOTADO' : 'ANNOTATED', primary: false },
+          { ref: v2Ref, src: analysisSrc, label: analysisLabel, primary: false },
         ].map(({ ref, src, label, primary }) => (
           <div key={label} style={{ borderRight: primary ? '1px solid #222' : 'none' }}>
             <div style={{ padding: '6px 12px', background: '#161616', borderBottom: '1px solid #222' }}>
@@ -570,6 +601,12 @@ export function SessionReviewPage({ state, setState }) {
       .finally(() => setLoading(false));
   }, [reviewSessionId, backendOnline, isRealSession]);
 
+  useEffect(() => {
+    if (!reviewSessionId && !demo) {
+      setState(s => ({ ...s, page: 'sessions' }));
+    }
+  }, [reviewSessionId, demo, setState]);
+
   // Determine sport from loaded data
   const activeSport = sessionData?.sport || sport;
   const asc = SPORTS[activeSport] || sc;
@@ -577,6 +614,29 @@ export function SessionReviewPage({ state, setState }) {
   // Show surf shell for surf sport
   if (activeSport === 'surf' && !sessionData) {
     return <SurfShell sc={asc} lang={lang} setState={setState} />;
+  }
+
+  if (isRealSession && !sessionData) {
+    return (
+      <div style={{ padding: '52px 0 0', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 11, color: asc.color, letterSpacing: '0.1em', marginBottom: 10 }}>
+            {backendOnline
+              ? (lang === 'es' ? 'CARGANDO SESIÓN REAL...' : 'LOADING REAL SESSION...')
+              : (lang === 'es' ? 'ESPERANDO API...' : 'WAITING FOR API...')}
+          </div>
+          <button
+            onClick={() => setState(s => ({ ...s, page: 'sessions' }))}
+            style={{
+              background: 'none', border: '1px solid #2a2a2a', borderRadius: 5,
+              padding: '7px 14px', cursor: 'pointer',
+              fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#8a8a8a',
+            }}>
+            {lang === 'es' ? 'VOLVER A SESIONES' : 'BACK TO SESSIONS'}
+          </button>
+        </div>
+      </div>
+    );
   }
 
   // Build review data
@@ -655,16 +715,29 @@ export function SessionReviewPage({ state, setState }) {
         </div>
 
         {/* Main grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 520px), 1fr))', gap: 16 }}>
 
           {/* Left */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
             {/* Video — real or placeholder */}
             {hasRealData && isRealSession ? (
-              <SyncVideoPlayer sessionId={reviewSessionId} lang={lang} sportColor={asc.color} />
+              <SyncVideoPlayer sessionId={reviewSessionId} sessionData={sessionData} lang={lang} sportColor={asc.color} />
             ) : (
               <VideoPlaceholder sc={asc} lang={lang} />
+            )}
+
+            {hasRealData && sessionData?.sam?.applied && (
+              <div style={{ border: '1px solid #222', borderRadius: 8, padding: '16px 18px', background: '#111' }}>
+                <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: asc.color, letterSpacing: '0.1em', marginBottom: 10 }}>
+                  {lang === 'es' ? 'AISLAMIENTO DE SENDERO' : 'TRAIL ISOLATION'}
+                </div>
+                <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 13, color: '#cfcfc8', lineHeight: 1.6 }}>
+                  {lang === 'es'
+                    ? 'El video SAM resalta el corredor transitable detectado. Úsalo para revisar línea, obstáculos visibles y decisiones de entrada/salida sin depender de un tracking corporal que en GoPro no aporta.'
+                    : 'The SAM video highlights the detected rideable corridor. Use it to review line choice, visible obstacles and entry/exit decisions without relying on body tracking that is not useful for GoPro.'}
+                </div>
+              </div>
             )}
 
             {/* Trend */}
@@ -678,7 +751,7 @@ export function SessionReviewPage({ state, setState }) {
             )}
 
             {/* DH Telemetry timeline charts */}
-            {activeSport === 'downhill' && hasRealData && sessionData?.features?.length > 0 && (
+            {activeSport === 'downhill' && hasRealData && sessionData?.features?.length > 0 && !reviewData.isPovCamera && !reviewData.isSamTrailReview && (
               <DHTimeline features={sessionData.features} lang={lang} color={asc.color} />
             )}
 
@@ -774,14 +847,25 @@ export function SessionReviewPage({ state, setState }) {
                 {lang === 'es' ? 'CAPACIDADES USADAS' : 'CAPABILITIES USED'}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {asc.capabilities.filter(c => c.live).map(cap => (
+                {asc.capabilities
+                  .filter(c => c.live)
+                  .filter(c => !(reviewData.isPovCamera && c.id === 'posture'))
+                  .map(cap => (
                   <CapChip key={cap.id} cap={cap} sport={activeSport} lang={lang} compact />
                 ))}
+                {reviewData.isSamTrailReview && (
+                  <CapChip
+                    cap={{ id: 'sam_trail', live: true, label: { en: 'Trail Isolation', es: 'Aislamiento de Sendero' } }}
+                    sport={activeSport}
+                    lang={lang}
+                    compact
+                  />
+                )}
               </div>
             </div>
 
             {/* Posture / terrain distributions (real data) */}
-            {hasRealData && sessionData?.posture_distribution && Object.keys(sessionData.posture_distribution).length > 0 && (
+            {hasRealData && sessionData?.posture_distribution && Object.keys(sessionData.posture_distribution).length > 0 && !reviewData.isPovCamera && !reviewData.isSamTrailReview && (
               <div style={{ border: '1px solid #222', borderRadius: 8, padding: '16px 16px', background: '#111' }}>
                 <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#6b6b6b', letterSpacing: '0.1em', marginBottom: 12 }}>
                   {lang === 'es' ? 'DISTRIBUCIÓN POSTURAL' : 'POSTURE DISTRIBUTION'}

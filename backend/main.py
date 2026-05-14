@@ -26,6 +26,197 @@ from src.config import AppConfig
 from src.io.temp_files import ensure_dir
 from src.services.pipeline import RiderAIPipeline
 
+
+def _try_downhill_sam_artifacts(
+    *,
+    video_path: str,
+    session_dir: Path,
+    mode: str,
+    prompt: str,
+    every_n: int,
+) -> dict:
+    """
+    Best-effort DH SAM artifact generation.
+
+    The main DH pipeline remains pose/line based. When SAM is available, this
+    creates a sampled trail-mask preview and overlay artifact so Premium is a
+    real processing attempt instead of just UI copy.
+    """
+    meta = {
+        "enabled": True,
+        "applied": False,
+        "engine": "sam3_video",
+        "artifact": None,
+        "mask_preview": None,
+        "frames": 0,
+        "error": "",
+    }
+
+    if not KARTING_AVAILABLE or _karting_pipeline is None:
+        meta["error"] = "SAM helper unavailable"
+        return meta
+
+    try:
+        import cv2
+        import numpy as np
+
+        sample_every = max(1, every_n)
+        frames = _karting_pipeline.extract_frames(
+            video_path,
+            every_n=sample_every,
+            max_frames=120,
+            skip_seconds=0,
+        )
+        if not frames:
+            meta["error"] = "No frames extracted"
+            return meta
+
+        dh_prompt = prompt or {
+            "helmet_cam": "mountain bike dirt trail path terrain ahead obstacles",
+            "drone_front_overhead": "mountain bike downhill trail corridor dirt path top view",
+            "drone_follow": "mountain bike downhill trail corridor dirt path around rider",
+        }.get(mode, "mountain bike downhill trail dirt path corridor")
+
+        sam_mode = "action_cam" if mode == "helmet_cam" else "fpv_follow"
+        masks = _karting_pipeline.segment_track_sam3_video(
+            frames,
+            mode=sam_mode,
+            prompt=dh_prompt,
+            chunk_size=24,
+        )
+        engine = "sam3_video"
+        if not masks:
+            h0, w0 = frames[0].shape[:2]
+            if sam_mode == "action_cam":
+                trail_points = [
+                    (w0 // 2, int(h0 * 0.22)),
+                    (int(w0 * 0.35), int(h0 * 0.32)),
+                    (int(w0 * 0.65), int(h0 * 0.32)),
+                    (w0 // 2, int(h0 * 0.14)),
+                ]
+            else:
+                trail_points = [
+                    (w0 // 2, int(h0 * 0.62)),
+                    (int(w0 * 0.35), int(h0 * 0.72)),
+                    (int(w0 * 0.65), int(h0 * 0.72)),
+                ]
+            masks = _karting_pipeline.segment_track_sam2_video(
+                frames,
+                trail_points,
+                mode=sam_mode,
+            )
+            engine = "sam2_hsv_fallback"
+        if not masks:
+            meta["error"] = "SAM returned no masks"
+            return meta
+
+        h, w = frames[0].shape[:2]
+        overlay_path = session_dir / "sam_trail_overlay.mp4"
+        mask_path = session_dir / "sam_trail_mask.png"
+        fps = max(6.0, 30.0 / sample_every)
+        writer = cv2.VideoWriter(
+            str(overlay_path),
+            cv2.VideoWriter_fourcc(*"mp4v"),
+            fps,
+            (w, h),
+        )
+        for frame, mask in zip(frames, masks):
+            out = frame.copy()
+            if mask is not None and mask.any():
+                tint = np.zeros_like(out)
+                tint[:, :] = (0, 170, 255)
+                out[mask > 0] = (out[mask > 0] * 0.58 + tint[mask > 0] * 0.42).astype(np.uint8)
+                contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                cv2.drawContours(out, contours, -1, (0, 220, 255), 2)
+            writer.write(out)
+        writer.release()
+
+        mask_stats = []
+        for mask in masks:
+            if mask is None or not mask.any():
+                mask_stats.append({"coverage": 0.0, "center": None, "width": 0.0})
+                continue
+            ys, xs = np.where(mask > 0)
+            coverage = float(len(xs) / mask.size)
+            center = float(xs.mean() / max(1, mask.shape[1]))
+            sample_y = int(mask.shape[0] * (0.28 if sam_mode == "action_cam" else 0.62))
+            row = mask[min(max(0, sample_y), mask.shape[0] - 1), :]
+            width = float(np.count_nonzero(row) / max(1, mask.shape[1]))
+            mask_stats.append({"coverage": coverage, "center": center, "width": width})
+
+        valid_centers = [s["center"] for s in mask_stats if s["center"] is not None]
+        valid_widths = [s["width"] for s in mask_stats if s["width"] > 0]
+        valid_cov = [s["coverage"] for s in mask_stats if s["coverage"] > 0]
+        avg_center = float(np.mean(valid_centers)) if valid_centers else None
+        center_std = float(np.std(valid_centers)) if len(valid_centers) > 1 else 0.0
+        avg_width = float(np.mean(valid_widths)) if valid_widths else 0.0
+        avg_coverage = float(np.mean(valid_cov)) if valid_cov else 0.0
+        continuity = float(len(valid_cov) / max(1, len(mask_stats)))
+        bias = None if avg_center is None else avg_center - 0.5
+
+        line_score = round(max(0.0, min(100.0, 100.0 - abs(bias or 0) * 120 - center_std * 180)), 1)
+        visibility_score = round(max(0.0, min(100.0, continuity * 70 + min(avg_coverage * 350, 30))), 1)
+
+        advice = []
+        if continuity < 0.7:
+            advice.append("- La visibilidad del sendero se corta por sombras, vegetacion o movimiento; usa el overlay para revisar solo los tramos donde el corredor se ve continuo.")
+        else:
+            advice.append("- El corredor se mantiene visible de forma estable; puedes usar esta toma para revisar decisiones de linea con confianza.")
+        if bias is not None and bias > 0.08:
+            advice.append("- La zona transitable aparece cargada hacia la derecha de la imagen; anticipa antes la mirada y prepara la salida para no cerrar tarde.")
+        elif bias is not None and bias < -0.08:
+            advice.append("- La zona transitable aparece cargada hacia la izquierda de la imagen; revisa si estas entrando demasiado pegado a ese borde.")
+        else:
+            advice.append("- El corredor queda bastante centrado; enfoca la revision en obstaculos y timing de entrada/salida.")
+        if avg_width < 0.18:
+            advice.append("- El sendero visible se ve estrecho; prioriza una linea limpia y evita correcciones bruscas sobre obstaculos.")
+        else:
+            advice.append("- Hay ancho visible para elegir linea; compara si conviene abrir antes o cortar mas directo segun el obstaculo.")
+
+        try:
+            import imageio_ffmpeg
+            import subprocess as _sp
+
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+            h264_path = session_dir / "sam_trail_overlay_h264.mp4"
+            result_enc = _sp.run(
+                [
+                    ffmpeg_exe, "-y", "-i", str(overlay_path),
+                    "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+                    "-movflags", "+faststart", "-an", str(h264_path),
+                ],
+                capture_output=True,
+            )
+            if result_enc.returncode == 0 and h264_path.exists():
+                overlay_path.unlink()
+                h264_path.rename(overlay_path)
+        except Exception as enc_err:
+            print(f"[backend] SAM overlay re-encode skipped: {enc_err}")
+        cv2.imwrite(str(mask_path), masks[0])
+
+        meta.update({
+            "applied": True,
+            "engine": engine,
+            "artifact": overlay_path.name,
+            "mask_preview": mask_path.name,
+            "frames": len(masks),
+            "prompt": dh_prompt,
+            "metrics": {
+                "avg_center": avg_center,
+                "center_std": center_std,
+                "avg_width": avg_width,
+                "avg_coverage": avg_coverage,
+                "continuity": continuity,
+                "line_score": line_score,
+                "visibility_score": visibility_score,
+            },
+            "coaching_summary": "\n".join(advice),
+        })
+        return meta
+    except Exception as exc:
+        meta["error"] = str(exc)
+        return meta
+
 # Karting pipeline (optional — graceful fallback if deps unavailable)
 try:
     import karting.demo.pipeline as _karting_pipeline
@@ -97,6 +288,8 @@ async def analyze(
     video: UploadFile = File(...),
     sport: str = Form("downhill"),
     mode: str = Form(""),
+    tier: str = Form("premium"),    # "fast" | "basic" | "premium"
+    every_n: int = Form(3),         # sample 1 of every N frames (premium default=3)
     min_conf: float = Form(0.35),
     smoothing_window: int = Form(5),
     prompt: str = Form(""),
@@ -135,11 +328,12 @@ async def analyze(
         try:
             kt_summary = _karting_pipeline.run(
                 video_path=temp_path,
-                every_n=2,
+                every_n=max(1, every_n),
                 max_frames=9999,   # process full video
                 coaching=True,
                 skip_seconds=0,
                 mode=karting_mode,
+                tier=tier,
                 prompt=prompt.strip() or None,
                 out_name="annotated",
                 output_dir=str(session_dir),
@@ -198,6 +392,49 @@ async def analyze(
         return {"session_id": session_id, "meta": meta}
 
     # ---------------------------------------------------------------- downhill
+    dh_mode = mode or "drone_follow"
+    if dh_mode in {"helmet_cam", "drone_front_overhead"}:
+        sam_meta = {"enabled": tier == "premium", "applied": False}
+        if tier == "premium":
+            sam_meta = _try_downhill_sam_artifacts(
+                video_path=temp_path,
+                session_dir=session_dir,
+                mode=dh_mode,
+                prompt=prompt.strip(),
+                every_n=every_n,
+            )
+
+        sam_metrics = sam_meta.get("metrics", {}) if isinstance(sam_meta, dict) else {}
+        meta = {
+            "original_filename": video.filename or "upload.mp4",
+            "session_id": session_id,
+            "sport": sport,
+            "sport_label": sport_info["label"],
+            "readiness": sport_info["readiness"],
+            "capabilities": (
+                ["line_review", "obstacle_cues", "session_playback", "trail_isolation"]
+                if dh_mode == "helmet_cam"
+                else ["trajectory_review", "section_review", "session_playback", "trail_isolation"]
+            ),
+            "mode": dh_mode,
+            "tier": tier,
+            "every_n": every_n,
+            "prompt": prompt.strip(),
+            "sam": sam_meta,
+            "no_pose_pipeline": True,
+            "avg_balance_score": None,
+            "avg_line_efficiency_score": sam_metrics.get("line_score"),
+            "avg_speed_proxy": None,
+            "trail_visibility_score": sam_metrics.get("visibility_score"),
+            "coaching_summary": sam_meta.get("coaching_summary", "") if isinstance(sam_meta, dict) else "",
+            "posture_distribution": {},
+            "terrain_distribution": {},
+        }
+        (session_dir / "meta.json").write_text(
+            json.dumps(meta, indent=2), encoding="utf-8"
+        )
+        return {"session_id": session_id, "meta": meta}
+
     model_path = os.getenv("MODEL_PATH", _DEFAULT_MODEL)
 
     run_config = AppConfig(
@@ -218,6 +455,15 @@ async def analyze(
         raise HTTPException(500, f"Pipeline error: {exc}") from exc
 
     summary = artifacts.summary
+    sam_meta = {"enabled": False, "applied": False}
+    if tier == "premium":
+        sam_meta = _try_downhill_sam_artifacts(
+            video_path=temp_path,
+            session_dir=session_dir,
+            mode=dh_mode,
+            prompt=prompt.strip(),
+            every_n=every_n,
+        )
 
     meta = {
         "original_filename": video.filename or "upload.mp4",
@@ -226,6 +472,11 @@ async def analyze(
         "sport_label": sport_info["label"],
         "readiness": sport_info["readiness"],
         "capabilities": sport_info["capabilities"],
+        "mode": dh_mode,
+        "tier": tier,
+        "every_n": every_n,
+        "prompt": prompt.strip(),
+        "sam": sam_meta,
         "avg_balance_score": summary.avg_balance_score,
         "avg_line_efficiency_score": summary.avg_line_efficiency_score,
         "avg_speed_proxy": summary.avg_speed_proxy,
@@ -256,6 +507,9 @@ def list_sessions():
             meta = json.loads(meta_file.read_text(encoding="utf-8"))
             meta.setdefault("sport", "downhill")
             meta.setdefault("session_id", d.name)
+            meta.setdefault("sport_label", SPORT_META.get(meta["sport"], SPORT_META["downhill"])["label"])
+            meta.setdefault("readiness", SPORT_META.get(meta["sport"], SPORT_META["downhill"])["readiness"])
+            meta.setdefault("mode", "drone_follow" if meta["sport"] == "downhill" else "fpv_follow")
             sessions.append(meta)
         except Exception:
             continue
@@ -273,13 +527,23 @@ def get_session(session_id: str):
         raise HTTPException(404, "Session metadata not found")
 
     meta = json.loads(meta_file.read_text(encoding="utf-8"))
+    meta.setdefault("session_id", session_id)
+    meta.setdefault("sport", "downhill")
+    meta.setdefault("sport_label", SPORT_META.get(meta["sport"], SPORT_META["downhill"])["label"])
+    meta.setdefault("readiness", SPORT_META.get(meta["sport"], SPORT_META["downhill"])["readiness"])
+    meta.setdefault("capabilities", SPORT_META.get(meta["sport"], SPORT_META["downhill"])["capabilities"])
+    meta.setdefault("mode", "drone_follow" if meta["sport"] == "downhill" else "fpv_follow")
+    meta["videos"] = {
+        "input": (session_dir / "input.mp4").exists(),
+        "annotated": (session_dir / "annotated_output.mp4").exists(),
+        "sam": (session_dir / "sam_trail_overlay.mp4").exists(),
+    }
 
     csv_path = session_dir / "features.csv"
     if csv_path.exists():
         try:
-            import pandas as pd
+            import csv
 
-            df = pd.read_csv(csv_path)
             cols = [
                 "timestamp_sec",
                 "balance_score",
@@ -289,15 +553,37 @@ def get_session(session_id: str):
                 "posture_label",
                 "terrain_label",
             ]
-            available = [c for c in cols if c in df.columns]
-            safe = df[available].where(df[available].notna(), other=None)
-            # Downsample to max 200 rows for performance
-            if len(safe) > 200:
-                step = max(1, len(safe) // 200)
-                safe = safe.iloc[::step]
-            # Use to_json to handle numpy types (float64, int64, NaN) correctly
-            meta["features"] = json.loads(safe.to_json(orient="records"))
-        except Exception:
+            numeric_cols = {
+                "timestamp_sec",
+                "balance_score",
+                "line_efficiency_score",
+                "speed_proxy",
+                "trunk_angle_deg",
+            }
+            rows = []
+            with csv_path.open(newline="", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                available = [c for c in cols if c in (reader.fieldnames or [])]
+                for row in reader:
+                    item = {}
+                    for col in available:
+                        val = row.get(col)
+                        if val in ("", "nan", "NaN", "None", None):
+                            item[col] = None
+                        elif col in numeric_cols:
+                            try:
+                                item[col] = float(val)
+                            except (TypeError, ValueError):
+                                item[col] = None
+                        else:
+                            item[col] = val
+                    rows.append(item)
+            if len(rows) > 200:
+                step = max(1, len(rows) // 200)
+                rows = rows[::step]
+            meta["features"] = rows
+        except Exception as exc:
+            print(f"[backend] Could not load features for {session_id}: {exc}")
             meta["features"] = []
     else:
         meta["features"] = []
@@ -450,7 +736,18 @@ def get_karting_session(session_id: str):
     summary_file = session_dir / "karting_summary.json"
     if not summary_file.exists():
         raise HTTPException(404, "Karting summary not found for this session")
-    return json.loads(summary_file.read_text(encoding="utf-8"))
+    summary = json.loads(summary_file.read_text(encoding="utf-8"))
+    if not summary.get("mode"):
+        meta_file = session_dir / "meta.json"
+        if meta_file.exists():
+            try:
+                meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                summary["mode"] = meta.get("mode") or "fpv_follow"
+            except Exception:
+                summary["mode"] = "fpv_follow"
+        else:
+            summary["mode"] = "fpv_follow"
+    return summary
 
 
 @app.get("/sessions/{session_id}/video/{kind}")
@@ -459,17 +756,20 @@ def get_video(session_id: str, kind: str):
     file_map = {
         "input": "input.mp4",
         "annotated": "annotated_output.mp4",
+        "sam": "sam_trail_overlay.mp4",
+        "sam_mask": "sam_trail_mask.png",
     }
     filename = file_map.get(kind)
     if not filename:
-        raise HTTPException(400, "Unknown video kind. Use 'input' or 'annotated'.")
+        raise HTTPException(400, "Unknown video kind. Use 'input', 'annotated', 'sam' or 'sam_mask'.")
 
     filepath = session_dir / filename
     if not filepath.exists():
         raise HTTPException(404, "Video not found")
 
+    media_type = "image/png" if filepath.suffix.lower() == ".png" else "video/mp4"
     return FileResponse(
         str(filepath),
-        media_type="video/mp4",
+        media_type=media_type,
         headers={"Accept-Ranges": "bytes", "Cache-Control": "no-cache"},
     )

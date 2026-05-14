@@ -99,6 +99,61 @@ function KerbTimeline({ frames, lang, onSeek, progress }) {
   );
 }
 
+function EnhancedKerbTimeline({ frames, lang, onSeek, progress }) {
+  const total = frames.length || 1;
+  const leftPct = Math.round((frames.filter(f => f.kl).length / total) * 100);
+  const rightPct = Math.round((frames.filter(f => f.kr).length / total) * 100);
+  const bothPct = Math.round((frames.filter(f => f.kl && f.kr).length / total) * 100);
+  const ref = useCanvasChart(frames, (ctx, W, H) => {
+    ctx.clearRect(0, 0, W, H);
+    const n = frames.length;
+    const col = W / n;
+    ctx.fillStyle = '#101010';
+    ctx.fillRect(0, 0, W, H);
+    frames.forEach((f, i) => {
+      const x = Math.floor(i * col);
+      const w = Math.ceil(col) + 1;
+      if (f.kl) {
+        ctx.fillStyle = f.kr ? '#facc15' : '#22d3ee';
+        ctx.fillRect(x, 1, w, Math.max(2, H / 2 - 2));
+      }
+      if (f.kr) {
+        ctx.fillStyle = f.kl ? '#facc15' : '#f87171';
+        ctx.fillRect(x, H / 2 + 1, w, Math.max(2, H / 2 - 2));
+      }
+    });
+    ctx.fillStyle = '#3a3a3a';
+    ctx.fillRect(0, H / 2 - 0.5, W, 1);
+    ctx.fillStyle = '#222';
+    for (let x = 0; x < W; x += W / 10) ctx.fillRect(x, 0, 1, H);
+  }, []);
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+        <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#888', letterSpacing: '0.08em' }}>
+          {lang === 'es' ? 'CONTACTO KERB' : 'KERB CONTACT'}
+        </span>
+        <div style={{ display: 'flex', gap: 10 }}>
+          {[['#22d3ee', `L ${leftPct}%`], ['#f87171', `R ${rightPct}%`], ['#facc15', `L+R ${bothPct}%`]].map(([c, l]) => (
+            <span key={l} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+              <span style={{ width: 6, height: 6, borderRadius: 1, background: c, display: 'inline-block' }} />
+              <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#777' }}>{l}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+      <SeekableChart onSeek={onSeek} progress={progress}>
+        <canvas ref={ref} style={{ width: '100%', height: 30, display: 'block', borderRadius: 3, background: '#101010' }} />
+      </SeekableChart>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 3 }}>
+        <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#555' }}>{lang === 'es' ? 'fila superior: izquierda' : 'top row: left'}</span>
+        <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#555' }}>{lang === 'es' ? 'fila inferior: derecha' : 'bottom row: right'}</span>
+      </div>
+    </div>
+  );
+}
+
 function ApexTimeline({ frames, lang, onSeek, progress }) {
   const ref = useCanvasChart(frames, (ctx, W, H) => {
     ctx.clearRect(0, 0, W, H);
@@ -123,14 +178,14 @@ function ApexTimeline({ frames, lang, onSeek, progress }) {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-        <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 8, color: '#555', letterSpacing: '0.08em' }}>
+        <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#777', letterSpacing: '0.08em' }}>
           APEX DIR
         </span>
         <div style={{ display: 'flex', gap: 10 }}>
           {[['#1e3a5f', lang === 'es' ? 'IZQ' : 'L'], ['#0f3020', lang === 'es' ? 'CTR' : 'C'], ['#3d1f00', lang === 'es' ? 'DER' : 'R']].map(([c, l]) => (
             <span key={l} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
               <span style={{ width: 6, height: 6, borderRadius: 1, background: c, display: 'inline-block', border: '1px solid #333' }} />
-              <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 7, color: '#444' }}>{l}</span>
+              <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#666' }}>{l}</span>
             </span>
           ))}
         </div>
@@ -185,10 +240,10 @@ function GapTimeline({ frames, lang, onSeek, progress }) {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-        <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 8, color: '#555', letterSpacing: '0.08em' }}>
+        <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#777', letterSpacing: '0.08em' }}>
           {lang === 'es' ? 'GAP (kart adelante)' : 'GAP (kart ahead)'}
         </span>
-        <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 7, color: '#333' }}>
+        <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#555' }}>
           {lang === 'es' ? '0=lejos 1=cerca' : '0=far 1=close'}
         </span>
       </div>
@@ -233,10 +288,10 @@ function LatTimeline({ frames, lang, onSeek, progress }) {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-        <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 8, color: '#555', letterSpacing: '0.08em' }}>
+        <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#777', letterSpacing: '0.08em' }}>
           {lang === 'es' ? 'POSICIÓN LATERAL' : 'LATERAL POSITION'}
         </span>
-        <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 7, color: '#333' }}>
+        <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#555' }}>
           {lang === 'es' ? 'izq ←→ der' : 'L ←→ R'}
         </span>
       </div>
@@ -265,11 +320,11 @@ function TelemetryTimeline({ frames, mode, lang, onSeek, progress }) {
         </span>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           {onSeek && (
-            <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 7, color: '#333', letterSpacing: '0.06em' }}>
+            <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#555', letterSpacing: '0.06em' }}>
               {lang === 'es' ? '← click para ir al frame' : '← click to seek'}
             </span>
           )}
-          <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 8, color: '#2a2a2a' }}>
+          <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#555' }}>
             {frames.length} {lang === 'es' ? 'pts' : 'pts'}
           </span>
         </div>
@@ -277,7 +332,7 @@ function TelemetryTimeline({ frames, mode, lang, onSeek, progress }) {
       <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 12 }}>
         {isActionCam ? (
           <>
-            <KerbTimeline frames={frames} lang={lang} onSeek={onSeek} progress={progress} />
+            <EnhancedKerbTimeline frames={frames} lang={lang} onSeek={onSeek} progress={progress} />
             <ApexTimeline frames={frames} lang={lang} onSeek={onSeek} progress={progress} />
             <GapTimeline  frames={frames} lang={lang} onSeek={onSeek} progress={progress} />
           </>
@@ -306,7 +361,7 @@ function CoachingText({ text }) {
           return (
             <li key={i} style={{
               fontFamily: 'Space Grotesk, sans-serif',
-              fontSize: 13, color: '#EDEDE8', lineHeight: 1.65,
+              fontSize: 14, color: '#EDEDE8', lineHeight: 1.7,
               marginBottom: 8, paddingLeft: isBullet ? 0 : 8,
               display: 'flex', gap: 8, alignItems: 'flex-start',
             }}>
@@ -320,7 +375,7 @@ function CoachingText({ text }) {
   }
   // Plain text
   const clean = text.replace(/\*\*(.*?)\*\*/g, '$1').replace(/^\*+/gm, '').trim();
-  return <p style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 13, color: '#EDEDE8', margin: 0, lineHeight: 1.65 }}>{clean}</p>;
+  return <p style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 14, color: '#EDEDE8', margin: 0, lineHeight: 1.7 }}>{clean}</p>;
 }
 
 const KART_COLORS = [
@@ -336,8 +391,20 @@ function VideoPanel({ lang, video = 'luciano', mode = 'fpv_follow', src = null, 
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [error, setError] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [pinned, setPinned] = useState(null); // { time, pct } — marked analysis point
+  const videoSrc = src || `/karting-demo/${video}_annotated.mp4`;
+
+  useEffect(() => {
+    setError(false);
+    setLoaded(false);
+    setPlaying(false);
+    setProgress(0);
+    setCurrentTime(0);
+    setDuration(0);
+    setPinned(null);
+  }, [videoSrc]);
 
   // Register external seek function so TelemetryTimeline can seek the video
   useEffect(() => {
@@ -407,7 +474,7 @@ function VideoPanel({ lang, video = 'luciano', mode = 'fpv_follow', src = null, 
       <div style={{ position: 'relative', background: '#000', aspectRatio: '16/9' }}>
         <video
           ref={videoRef}
-          src={src || `/karting-demo/${video}_annotated.mp4`}
+          src={videoSrc}
           style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
           onTimeUpdate={() => {
             const v = videoRef.current;
@@ -418,19 +485,36 @@ function VideoPanel({ lang, video = 'luciano', mode = 'fpv_follow', src = null, 
               onProgressChange?.(p);
             }
           }}
-          onLoadedMetadata={() => setDuration(videoRef.current?.duration || 0)}
+          onLoadedMetadata={() => {
+            setDuration(videoRef.current?.duration || 0);
+            setLoaded(true);
+            setError(false);
+          }}
           onEnded={() => setPlaying(false)}
           onError={() => setError(true)}
           playsInline
         />
+        {!loaded && !error && (
+          <div style={{
+            position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: '#050505',
+            fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#555', letterSpacing: '0.08em',
+          }}>
+            {lang === 'es' ? 'CARGANDO VIDEO...' : 'LOADING VIDEO...'}
+          </div>
+        )}
         {error && (
           <div style={{
             position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center', background: '#0d0d0d', gap: 10,
           }}>
-            <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#6b6b6b' }}>VIDEO NOT FOUND</div>
-            <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#333', textAlign: 'center' }}>
-              Run pipeline then re-encode to public/karting-demo/
+            <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: '#ef6464' }}>
+              {lang === 'es' ? 'VIDEO NO DISPONIBLE' : 'VIDEO NOT AVAILABLE'}
+            </div>
+            <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#555', textAlign: 'center', maxWidth: 280, lineHeight: 1.5 }}>
+              {sessionId
+                ? (lang === 'es' ? 'La sesion existe, pero falta annotated_output.mp4 o el navegador no pudo leerlo.' : 'The session exists, but annotated_output.mp4 is missing or the browser could not read it.')
+                : (lang === 'es' ? 'Faltan los archivos demo en frontend/public/karting-demo/.' : 'Demo files are missing in frontend/public/karting-demo/.')}
             </div>
           </div>
         )}
@@ -676,7 +760,7 @@ function DriverCoachCard({ coaching, kerb_events, apex_frames, frames_analyzed, 
       <div style={{ padding: '10px 16px', borderTop: `1px solid #1a1a1a`, display: 'flex', gap: 16 }}>
         {[
           { label: 'RACING LINE', detail: lang === 'es' ? 'punto de fuga' : 'vanishing point' },
-          { label: 'TIRES',      detail: lang === 'es' ? 'llantas delanteras' : 'front tires' },
+          { label: 'VIEW GEOM',  detail: lang === 'es' ? 'posición inferida' : 'inferred position' },
           { label: 'KERB L/R',   detail: lang === 'es' ? 'detección kerb' : 'kerb detection' },
           { label: 'GAP BAR',    detail: lang === 'es' ? 'kart adelante' : 'kart ahead' },
         ].map(t => (
@@ -751,12 +835,12 @@ const TIER0_ACTION = [
     },
   },
   {
-    tag: 'TIRES',
+    tag: 'VIEW GEOMETRY',
     color: '#f59e0b',
-    title: { en: 'Front Tire Markers (Tier 1)', es: 'Marcadores de Llantas (Tier 1)' },
+    title: { en: 'Own-Kart Position via View Geometry', es: 'Posición Propia por Geometría de Vista' },
     body: {
-      en: 'Planned for Tier 1. Requires the camera mounted on the front bodywork (not helmet) so the front tires are visible in the lower frame. With that setup, dark elliptical regions (tire rubber) are detected per-frame — their horizontal position combined with the vanishing point gives steering angle as a proxy. With a helmet-mount camera (current setup) the cockpit and steering wheel fill the lower frame, making tire detection unreliable.',
-      es: 'Planificado para Tier 1. Requiere cámara montada en la carrocería delantera (no en el casco) para que las llantas delanteras sean visibles. Con ese setup, se detectan regiones elípticas oscuras (caucho) por frame — su posición horizontal combinada con el punto de fuga da el ángulo de dirección como proxy. Con cámara de casco (setup actual) el cockpit y el volante llenan la parte inferior del frame, haciendo la detección poco fiable.',
+      en: 'In the current action-cam flow, own-kart position is not directly detected as a physical point. It is inferred from the road mask, the vanishing point, kerb side and the visible traffic ahead. This is useful for line-reading and race context, but it is weaker than an overhead or follow-drone view for absolute track geometry.',
+      es: 'En el flujo actual de action cam, la posición propia no se detecta como un punto físico directo del kart. Se infiere desde la máscara de pista, el punto de fuga, el lado del kerb y el tráfico visible adelante. Sirve para leer la trazada y el contexto de carrera, pero es más débil que una toma cenital o de seguimiento para geometría absoluta de pista.',
     },
   },
   {
@@ -812,15 +896,15 @@ function FeatureAnnotations({ mode, lang }) {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{
-            fontFamily: 'Space Mono, monospace', fontSize: 9, letterSpacing: '0.12em',
+            fontFamily: 'Space Mono, monospace', fontSize: 11, letterSpacing: '0.12em',
             color: KT_HEX, background: KT_HEX + '15', border: `1px solid ${KT_HEX}35`,
             borderRadius: 3, padding: '2px 8px', flexShrink: 0,
           }}>TIER 0</span>
-          <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#a0a0a0', letterSpacing: '0.09em' }}>
+          <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 12, color: '#b0b0aa', letterSpacing: '0.09em' }}>
             {tl(title, lang)}
           </span>
         </div>
-        <p style={{ margin: 0, fontFamily: 'Space Grotesk, sans-serif', fontSize: 12, color: '#888', lineHeight: 1.5 }}>
+        <p style={{ margin: 0, fontFamily: 'Space Grotesk, sans-serif', fontSize: 14, color: '#aaa', lineHeight: 1.55 }}>
           {tl(subtitle, lang)}
         </p>
       </div>
@@ -835,18 +919,18 @@ function FeatureAnnotations({ mode, lang }) {
             {/* Tag + Title row */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 7 }}>
               <span style={{
-                fontFamily: 'Space Mono, monospace', fontSize: 9, whiteSpace: 'nowrap',
+                fontFamily: 'Space Mono, monospace', fontSize: 11, whiteSpace: 'nowrap',
                 color: f.color, background: f.color + '15', border: `1px solid ${f.color}30`,
                 borderRadius: 3, padding: '3px 8px', flexShrink: 0, letterSpacing: '0.05em',
               }}>{f.tag}</span>
-              <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 13, fontWeight: 600, color: '#c8c8c8' }}>
+              <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 15, fontWeight: 700, color: '#e0ded8' }}>
                 {tl(f.title, lang)}
               </span>
             </div>
             {/* Body */}
             <p style={{
-              margin: 0, fontFamily: 'Space Grotesk, sans-serif', fontSize: 12,
-              color: '#9a9a9a', lineHeight: 1.7,
+              margin: 0, fontFamily: 'Space Grotesk, sans-serif', fontSize: 14,
+              color: '#b8b8b0', lineHeight: 1.75,
             }}>
               {tl(f.body, lang)}
             </p>
@@ -900,9 +984,12 @@ export function KartingDemoPage({ state, setState }) {
       .catch(() => setLoading(false));
   }, [sessionId, video]);
 
+  const effectiveMode = summary?.mode || mode;
+  const effectiveIsActionCam = effectiveMode === 'action_cam';
+
   // Action cam: single driver card from coaching.driver
   // FPV follow: kart cards from top_karts + driver_scores
-  const karts = summary ? (isActionCam
+  const karts = summary ? (effectiveIsActionCam
     ? [{ id: 'driver', color: KART_COLORS[0], frames_detected: summary.frames_analyzed,
          scores: { overall: null, consistency: null, edge_use: null },
          lat_mean: null, coaching: summary.coaching?.driver || null }]
@@ -918,7 +1005,7 @@ export function KartingDemoPage({ state, setState }) {
       })
   ) : [];
 
-  const modeLabel = isActionCam ? 'Action Cam — Casco' : 'FPV Drone Follow';
+  const modeLabel = effectiveIsActionCam ? 'Action Cam - Casco' : 'FPV Drone Follow';
 
   return (
     <div style={{ padding: '52px 0 0', minHeight: '100vh' }}>
@@ -975,10 +1062,10 @@ export function KartingDemoPage({ state, setState }) {
             </h2>
             <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: '#6b6b6b' }}>
               {sessionId ? sessionId : (summary?.date || '2026-04-28')} · {summary?.frames_analyzed || '—'} frames
-              {isActionCam
+              {effectiveIsActionCam
                 ? (summary?.kerb_events != null ? ` · ${summary.kerb_events} kerb events` : '')
                 : ` · ${summary?.karts_detected || '—'} karts`}
-              {isActionCam && summary?.skip_seconds > 0 && (
+              {effectiveIsActionCam && summary?.skip_seconds > 0 && (
                 <span style={{ color: '#444', marginLeft: 8 }}>· intro skip {summary.skip_seconds}s</span>
               )}
             </div>
@@ -997,12 +1084,12 @@ export function KartingDemoPage({ state, setState }) {
         </div>
 
         {/* Main layout */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: 20, alignItems: 'start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 520px), 1fr))', gap: 20, alignItems: 'start' }}>
 
           {/* Left: video + stats */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <VideoPanel
-              lang={lang} video={video} mode={mode} src={videoSrc}
+              lang={lang} video={video} mode={effectiveMode} src={videoSrc}
               sessionId={sessionId}
               onAnalysisResult={r => setFrameAnalysis(r)}
               onRegisterSeek={handleRegisterSeek}
@@ -1056,7 +1143,7 @@ export function KartingDemoPage({ state, setState }) {
               }}>
                 {[
                   { v: summary.frames_analyzed, k: lang === 'es' ? 'frames' : 'frames' },
-                  isActionCam
+                  effectiveIsActionCam
                     ? { v: summary.kerb_events ?? '—', k: lang === 'es' ? 'eventos kerb' : 'kerb events' }
                     : { v: summary.karts_detected, k: lang === 'es' ? 'karts det.' : 'karts det.' },
                   { v: 'SAM3+HSV',              k: lang === 'es' ? 'segmentación' : 'segmentation' },
@@ -1076,13 +1163,12 @@ export function KartingDemoPage({ state, setState }) {
             {/* Telemetry timeline charts */}
             {summary?.frames?.length > 0 && (
               <TelemetryTimeline
-                frames={summary.frames} mode={mode} lang={lang}
+                frames={summary.frames} mode={effectiveMode} lang={lang}
                 onSeek={handleTimelineSeek} progress={videoProgress}
               />
             )}
 
             {/* Feature annotations — legend for what's in the video */}
-            <FeatureAnnotations mode={mode} lang={lang} />
           </div>
 
           {/* Right: kart analysis */}
@@ -1104,7 +1190,7 @@ export function KartingDemoPage({ state, setState }) {
               </div>
             )}
 
-            {isActionCam ? (
+            {effectiveIsActionCam ? (
               summary && <DriverCoachCard
                 coaching={summary.coaching?.driver}
                 kerb_events={summary.kerb_events ?? null}
@@ -1123,6 +1209,10 @@ export function KartingDemoPage({ state, setState }) {
             ))}
 
           </div>
+        </div>
+
+        <div style={{ marginTop: 20 }}>
+          <FeatureAnnotations mode={effectiveMode} lang={lang} />
         </div>
       </div>
     </div>
